@@ -12,233 +12,101 @@
 %     in particular their interaction with PTE_U
 %   sidebar about why it is extern char[]
 
-\chapter{Operating system organization}
+\chapter{操作系统组织结构}
 \label{CH:FIRST}
 
-A key requirement for an operating system is to support several activities at once.  For
-example,
-one might use the {\tt fork} and {\tt exec} system calls from
+操作系统的关键需求是同时支持多个活动。例如，可以使用
 Chapter~\ref{CH:UNIX}
-to start both a compiler and a text editor as processes.
-The operating system must 
-\indextext{time-share} 
-resources such as CPUs and memory among these processes.
-The operating system must also arrange for
-\indextext{isolation} 
-between the processes.
-If one process has a bug and malfunctions,
-it shouldn't affect unrelated processes.
-Complete isolation, however, is too strong, since it should be possible for
-processes to intentionally interact; pipelines are an example.
-Thus
-an operating system must fulfill three requirements: multiplexing, isolation,
-and interaction.
+中的 {\tt fork} 和 {\tt exec} 系统调用（system call）来启动编译器和文本编辑器作为进程（process）。操作系统必须在多个进程之间
+\indextext{time-share}
+分时（time-sharing）共享 CPU 和内存等资源。操作系统还必须安排
+\indextext{isolation}
+隔离（isolation）机制，使各进程相互独立。如果一个进程出现错误并发生故障，不应影响其他无关进程。然而，完全隔离又过于严格，因为进程应该能够有意地进行交互；管道（pipeline）就是一个例子。因此，操作系统必须满足三个要求：多路复用（multiplexing）、隔离（isolation）和交互（interaction）。
 
-This chapter provides an overview of how operating systems are
-organized to achieve these three requirements.  It turns out there are
-many ways to do so, but this text focuses on mainstream designs
-centered around a \indextext{monolithic kernel}, which is used by many
-Unix operating systems.  This chapter also provides an overview of an
-xv6 process, the unit of isolation in xv6.
+本章概述了操作系统如何组织以实现这三个要求。实现方式有很多，但本文聚焦于围绕
+\indextext{monolithic kernel}
+宏内核（monolithic kernel）的主流设计，许多 Unix 操作系统都采用这种架构。本章还概述了 xv6 进程，即 xv6 中的隔离单元。
 
-Xv6 runs on a \indextext{multi-core}\footnote{
-By ``multi-core'' this text means multiple CPUs that share memory but execute
-in parallel, each with its own set of registers.
-This text sometimes uses the term
-\indextext{multiprocessor} as a synonym for multi-core,
-though multiprocessor can also refer more specifically to a computer with
-several distinct processor chips.} RISC-V microprocessor,
-and much of its low-level
-functionality (for example, its process implementation) is specific to
-RISC-V.  RISC-V is a 64-bit CPU, and xv6 is written in ``LP64'' C,
-which means long (L) and pointers (P) in the C programming language
-are 64 bits, but an {\tt int} is 32 bits.  This book assumes the reader has done
-a bit of machine-level programming on some architecture, and will
-introduce RISC-V-specific ideas as they come up.
-The user-level ISA~\cite{riscv:user} and privileged
-architecture~\cite{riscv:priv} documents are the complete
-specifications.
-You may also refer to
+Xv6 运行在
+\indextext{multi-core}
+多核（multi-core）RISC-V 微处理器上，
+其许多底层功能（例如进程实现）是特定于 RISC-V 的。RISC-V 是 64 位 CPU，xv6 使用 ``LP64'' C 语言编写，这意味着 C 语言中的 long（L）和指针（P）是 64 位，但 {\tt int} 是 32 位。本书假设读者在某些架构上有一定的机器级编程经验，并将在需要时介绍 RISC-V 特定的概念。
+用户级 ISA~\cite{riscv:user} 和特权架构~\cite{riscv:priv} 文档是完整的规范。
+读者还可以参考
 ``The RISC-V Reader: An Open Architecture
-Atlas''~\cite{riscv}.
+Atlas''~\cite{riscv}。
 
-The CPU in a complete computer is surrounded by support hardware, much
-of it in the form of I/O interfaces. Xv6 is written for the support
-hardware simulated by qemu's ``-machine virt'' option. This includes
-RAM, a ROM containing boot code, a serial connection to the user's
-keyboard/screen, and a disk for storage.
+完整计算机中的 CPU 被支持硬件包围，其中大部分以 I/O 接口的形式存在。Xv6 为 qemu 的 ``-machine virt'' 选项模拟的支持硬件而编写。这包括 RAM、包含启动代码的 ROM、与用户键盘/屏幕的串行连接，以及用于存储的磁盘。
 
-%% 
-\section{Abstracting physical resources}
-%% 
+%%
+\section{抽象物理资源}
+%%
 
-The first question one might ask when encountering an operating system is why
-have it at all?  That is, one could implement the system calls in
+人们遇到操作系统时可能会问的第一个问题是：为什么需要操作系统？也就是说，可以将
 Figure~\ref{fig:api}
-as a library, with which applications link.  In this plan,
-each application could even have its own library tailored to its needs.
-Applications could directly interact with hardware resources
-and use those resources in the best way for the application (e.g., to achieve
-high or predictable performance).  Some operating systems for
-embedded devices or real-time systems are organized in this way.
+中的系统调用实现为一个库，应用程序与之链接。在这种方案中，每个应用程序甚至可以有自己的库，根据其需求定制。应用程序可以直接与硬件资源交互，并以最适合应用的方式使用这些资源（例如，实现高性能或可预测的性能）。一些用于嵌入式设备或实时系统的操作系统就是以这种方式组织的。
 
-The downside of this library approach is that, if there is more than one
-application running, the applications must be well-behaved.
-For example, each application must periodically give up the
-CPU so that other applications can run.
-Such a 
-\textit{cooperative} 
-time-sharing scheme may be OK if all applications trust each
-other and have no bugs. It's more typical for applications
-to not trust each other, and to have bugs, so one often wants
-stronger isolation than a cooperative scheme provides.
+这种库方法的缺点是，如果有多个应用程序运行，这些应用程序必须表现良好。例如，每个应用程序必须定期放弃 CPU，以便其他应用程序可以运行。如果所有应用程序相互信任且没有错误，这种
+\textit{协作式}
+分时方案可能是可行的。更典型的情况是应用程序互不信任，且存在错误，因此通常需要比协作方案更强的隔离。
 
-To achieve strong isolation it's helpful to forbid applications from
-directly accessing sensitive hardware resources, and instead to abstract the
-resources into services.  For example, Unix applications interact with storage
-only through the file system's
-\lstinline{open},
-\lstinline{read},
-\lstinline{write}, 
-and
+为了实现强隔离，最好禁止应用程序直接访问敏感的硬件资源，而是将资源抽象为服务。例如，Unix 应用程序仅通过文件系统的
+\lstinline{open}、
+\lstinline{read}、
+\lstinline{write}
+和
 \lstinline{close}
-system calls,
-instead of reading and writing the disk directly. 
-This provides the application with the convenience of pathnames, and it allows
-the operating system (which provides the interface) to manage the disk. 
-Even if isolation is not a concern,
-programs that interact intentionally (or just wish to keep
-out of each other's way) are likely to find a file system a more convenient
-abstraction than direct use of the disk.
+系统调用与存储交互，而不是直接读写磁盘。这为应用程序提供了路径名的便利，并允许操作系统（提供该接口）管理磁盘。即使隔离不是关注点，有意交互（或只是希望互不干扰）的程序也可能发现文件系统是比直接使用磁盘更方便的抽象。
 
-Similarly, Unix transparently switches hardware CPUs among processes,
-saving and restoring register state as necessary,
-so that applications don't have to be
-aware of time-sharing.  This transparency allows the operating system to share
-CPUs even if some applications are in infinite loops.
+同样，Unix 透明地在进程之间切换硬件 CPU，根据需要保存和恢复寄存器状态，使应用程序无需感知分时。这种透明性允许操作系统共享 CPU，即使某些应用程序处于无限循环中。
 
-As another example, Unix processes use 
+再举一个例子，Unix 进程使用
 \lstinline{exec}
-to build up their memory image, instead of directly interacting with physical
-memory.  This allows the operating system to decide where to place a process in
-memory; if memory is tight, the operating system might even store some of
-a process's data on disk.
+构建其内存映像，而不是直接与物理内存交互。这允许操作系统决定将进程放置在内存的何处；如果内存紧张，操作系统甚至可能将进程的某些数据存储在磁盘上。
 \lstinline{exec}
-also provides
-users with the convenience of a file system to store executable program images.  
+还为用户提供了使用文件系统存储可执行程序映像的便利。
 
-Many forms of interaction among Unix processes occur via file descriptors.
-Not only do file descriptors abstract away many details (e.g.,
-where data in a pipe or file is stored), they are also defined in a
-way that simplifies interaction.
-For example, if one application in a pipeline exits or fails, the kernel
-automatically generates an end-of-file signal for the next process in the pipeline.
+Unix 进程之间的许多交互形式通过文件描述符（file descriptor）进行。文件描述符不仅抽象了许多细节（例如，管道或文件中的数据存储位置），而且其定义方式也简化了交互。例如，如果管道中的一个应用程序退出或失败，内核会自动为管道中的下一个进程生成文件结束信号。
 
-The system-call interface in
 Figure~\ref{fig:api}
-is carefully designed to provide both programmer convenience and
-the possibility of strong isolation.  The Unix interface
-is not the only way to abstract resources, but it has proved to be a good
-one.
+中的系统调用接口经过精心设计，既提供了程序员便利，又提供了强隔离的可能性。Unix 接口不是抽象资源的唯一方式，但已被证明是一种良好的方式。
 
-%% 
-\section{User mode, supervisor mode, and system calls}
-%% 
+%%
+\section{用户模式、监管者模式和系统调用}
+%%
 
-Strong isolation requires a hard boundary between applications and the operating
-system.
-Applications shouldn't be allowed to disturb the operation of
-the operating system or other programs, even if the application
-has a bug or is malicious.
-To achieve strong isolation, the operating system must arrange that applications cannot modify (or even
-read) the operating system's data structures and instructions and that
-applications cannot access other processes' memory.
+强隔离需要在应用程序和操作系统之间建立严格的边界。即使应用程序有错误或恶意行为，也不应允许其干扰操作系统或其他程序的运行。为了实现强隔离，操作系统必须确保应用程序不能修改（甚至不能读取）操作系统的数据结构和指令，并且应用程序不能访问其他进程的内存。
 
-CPUs provide hardware support for strong isolation.   For
-example, RISC-V has three privilege levels which constrain
-what code can do:
-\indextext{machine mode},
-\indextext{supervisor mode}, and
-\indextext{user mode}.
-Instructions executing in machine mode have full privilege; a
-CPU starts in machine mode.  Machine mode is mostly intended for
-setting up the computer during boot.  Xv6 executes briefly in machine mode and
-then changes to supervisor mode.
+CPU 为强隔离提供硬件支持。例如，RISC-V 有三个特权级别（privilege level），限制代码可以执行的操作：
+\indextext{machine mode}（机器模式）、
+\indextext{supervisor mode}（监管者模式）和
+\indextext{user mode}（用户模式）。在机器模式下执行的指令拥有完全特权；CPU 启动时处于机器模式。机器模式主要用于在启动期间配置计算机。Xv6 在机器模式下执行一小段时间，然后切换到监管者模式。
 
-In supervisor mode the CPU is allowed to execute 
-\indextext{privileged instructions}:
-for example, enabling and disabling interrupts,  reading and writing
-the register that holds the address of the page table, etc.
-If an application in user mode attempts to execute
-a privileged instruction, then the CPU doesn't execute the instruction, but
-``traps''
-to special code in supervisor mode that can terminate the application.
-Figure~\ref{fig:os}
-in Chapter~\ref{CH:UNIX} illustrates this organization.  An application can
-execute only user-mode instructions (e.g., adding numbers, etc.) and is said to
-be running in 
-\indextext{user space},
-while the software in supervisor mode can also execute privileged instructions and
-is said to be running in
-\indextext{kernel space}.
-The software running in kernel space (or in supervisor mode) is called
-the
-\indextext{kernel}.
+在监管者模式下，CPU 被允许执行
+\indextext{privileged instructions}（特权指令）：例如，启用和禁用中断、读写保存页表地址的寄存器等。如果用户模式中的应用程序尝试执行特权指令，CPU 不会执行该指令，而是会``陷入''（trap）到监管者模式中的特殊代码，该代码可以终止应用程序。
+Chapter~\ref{CH:UNIX}
+中的 Figure~\ref{fig:os} 说明了这种组织结构。应用程序只能执行用户模式指令（例如，数字相加等），被称为在
+\indextext{user space}（用户空间）
+中运行，而监管者模式中的软件还可以执行特权指令，被称为在
+\indextext{kernel space}（内核空间）
+中运行。在内核空间（或监管者模式）中运行的软件称为
+\indextext{kernel}（内核）。
 
-Applications interact with the kernel via system calls
-calls such as {\tt read}.
-Applications are not allowed to directly call kernel functions
-or access the kernel's memory.
-RISC-V provides the \indexcode{ecall} instruction
-for system calls; it switches the CPU from user to supervisor mode
-and jumps to a kernel-specified entry point.
-Once the CPU has switched to supervisor mode,
-the kernel can then validate the arguments of the system call (e.g.,
-check if the address passed to the system call is part of the application's memory), decide whether
-the application is allowed to perform the requested operation (e.g.,
-check if the application is allowed to write the specified file), and then deny it
-or execute it.  It is important that the kernel control the entry point for
-transitions to supervisor mode; if the application could decide the kernel entry
-point, a malicious application could, for example, enter the kernel at a point where the
-validation of arguments is skipped.
+应用程序通过系统调用（system call）与内核交互，例如 {\tt read}。应用程序不允许直接调用内核函数或访问内核内存。RISC-V 提供了 \indexcode{ecall} 指令用于系统调用；它将 CPU 从用户模式切换到监管者模式，并跳转到内核指定的入口点。一旦 CPU 切换到监管者模式，内核就可以验证系统调用的参数（例如，检查传递给系统调用的地址是否是应用程序内存的一部分），决定应用程序是否被允许执行请求的操作（例如，检查应用程序是否被允许写入指定文件），然后拒绝或执行该操作。内核控制进入监管者模式的入口点非常重要；如果应用程序可以决定内核入口点，恶意应用程序可能会在内核跳过参数验证的位置进入，例如。
 
-%% 
-\section{Kernel organization}
+%%
+\section{内核组织结构}
 %% 
 
-A key design question is what part of the operating
-system should run in supervisor mode. 
-One possibility is that the entire operating system resides
-in the kernel, so that the implementations of all system calls
-run in supervisor mode.
-This organization is called a
-\indextext{monolithic kernel}.
+一个关键的设计问题是操作系统的哪部分应该在监管者模式下运行。一种可能是整个操作系统驻留在内核中，这样所有系统调用的实现都在监管者模式下运行。这种组织称为
+\indextext{monolithic kernel}（宏内核）。
 
-In a monolithic organization the entire operating system consists of a single
-program running in supervisor mode.
-One reason this organization is convenient is that the OS designer
-doesn't have to divide code into parts that do and do not
-require supervisor privileges.
-Furthermore, it is easy for different parts of the operating system to
-cooperate, since they are parts of a single program.
-For example, a monolithic kernel might share a disk block cache 
-with the file system and the virtual memory system. 
+在宏内核组织中，整个操作系统由一个在监管者模式下运行的单一程序组成。这种组织方便的一个原因是操作系统设计者不需要将代码划分为需要监管者特权和不需要的部分。此外，操作系统不同部分之间的协作很容易，因为它们是同一程序的一部分。例如，宏内核可能与文件系统和虚拟内存系统共享磁盘块缓存。
 
-A downside is that monolithic kernels tend to grow large
-and complex, so that no one developer understands all of 
-the interactions between different parts of the code;
-this is a recipe for bugs. A bug in the kernel is particularly
-troublesome because it may cause the entire computer to crash,
-or cause many applications to malfunction,
-or make the entire computer vulnerable to security attacks.
+缺点是宏内核往往变得庞大而复杂，以至于没有一个开发者理解代码不同部分之间的所有交互；这是产生错误的根源。内核中的错误特别麻烦，因为它可能导致整个计算机崩溃，或导致许多应用程序故障，或使整个计算机容易受到安全攻击。
 
-A \indextext{microkernel} aims to reduce the incidence of bugs in the
-kernel. The idea is to put an absolute minimum of functionality in the
-kernel itself, so that little code executes in supervisor mode, and so
-that the kernel is easy to understand and analyze for correctness. The
-bulk of the operating system runs as user-level server processes. For
-example, the file system code would execute as a server process, in
-user mode rather than supervisor mode.
+\indextext{microkernel}（微内核）
+旨在减少内核中错误的发生。其想法是将绝对最少的功能放入内核本身，这样少量代码在监管者模式下执行，内核易于理解和分析其正确性。操作系统的大部分作为用户级服务器进程运行。例如，文件系统代码将作为服务器进程执行，在用户模式而非监管者模式下。
 
 \begin{figure}[t]
 \center
@@ -248,109 +116,63 @@ user mode rather than supervisor mode.
 \end{figure}
 
 Figure~\ref{fig:mkernel}
-illustrates this microkernel design.  In the figure, the file system runs as a
-user-level server process.
-To allow applications to interact with the
-file server, the kernel provides an inter-process communication
-mechanism to send messages from one
-user-mode process to another.  For example, if an application like the shell
-wants to read or write a file, it sends a message to the file server and waits
-for a response. 
+说明了这种微内核设计。在图中，文件系统作为用户级服务器进程运行。为了允许应用程序与文件服务器交互，内核提供了一种进程间通信（inter-process communication）机制，用于将消息从一个用户模式进程发送到另一个用户模式进程。例如，如果像 shell 这样的应用程序想要读取或写入文件，它会向文件服务器发送消息并等待响应。
 
-In a microkernel, the kernel interface consists of a few low-level
-functions for starting applications, sending messages,
-accessing device hardware, etc.  This organization allows the kernel to be 
-relatively simple, as most of the operating system
-resides in user-level servers.
+在微内核中，内核接口由一些低级函数组成，用于启动应用程序、发送消息、访问设备硬件等。这种组织允许内核相对简单，因为大部分操作系统驻留在用户级服务器中。
 
-In the real world, both monolithic kernels and microkernels are
-popular. Many
-Unix kernels are monolithic. For example, Linux has a monolithic kernel,
-although some OS functions run as user-level servers (e.g., the window
-system).  Linux delivers high performance to OS-intensive applications, partially
-because the subsystems of the kernel can be tightly integrated.
+在现实世界中，宏内核和微内核都很流行。许多 Unix 内核是宏内核。例如，Linux 具有宏内核，尽管某些操作系统功能作为用户级服务器运行（例如，窗口系统）。Linux 为操作系统密集型应用程序提供高性能，部分原因是内核的子系统可以紧密集成。
 
-Operating systems such as Minix, L4, and QNX are organized as a microkernel with
-servers, and have seen wide deployment in embedded settings.  A
-variant of L4, seL4, is small enough that it has been verified for
-memory safety and other security properties~\cite{sel4}.
+Minix、L4 和 QNX 等操作系统被组织为带有服务器的微内核，并已在嵌入式环境中广泛部署。L4 的一个变体 seL4 足够小，已被验证具有内存安全性和其他安全属性~\cite{sel4}。
 
-There is much debate among developers of operating systems about which
-organization is better, but there is no conclusive evidence one way or
-the other.  Furthermore, it depends much on what ``better'' means:
-faster performance, smaller code size, reliability of the kernel,
-reliability of the complete operating system (including user-level
-services), etc.
+关于哪种组织更好的争论在操作系统开发者之间存在很大争议，但没有确凿证据表明哪一种更好。此外，这很大程度上取决于``更好''的含义：更快的性能、更小的代码大小、内核的可靠性、完整操作系统的可靠性（包括用户级服务）等。
 
-There are also practical considerations that may be more important
-than the question of which organization.  Some operating systems
-have a microkernel but run some of the user-level services in kernel
-space for performance reasons.  Some operating systems have monolithic
-kernels because that is how they started and there is little incentive
-to move to a pure microkernel organization, because new features may
-be more important than rewriting the existing operating system to fit a microkernel
-design.
+还有一些实际考虑可能比组织问题更重要。某些操作系统具有微内核，但出于性能原因，某些用户级服务在内核空间中运行。某些操作系统具有宏内核，因为它们就是这样开始的，并且几乎没有动力转向纯微内核组织，因为新功能可能比重写现有操作系统以适应微内核设计更重要。
 
-From this book's perspective, microkernel and monolithic operating
-systems share many key ideas.  They implement system calls, they use
-page tables, they handle interrupts, they support processes, they use
-locks for concurrency control, they implement a file system,
-etc. This book focuses on these core ideas.
+从本书的角度来看，微内核和宏内核操作系统共享许多关键思想。它们实现系统调用，使用页表（page table），处理中断（interrupt），支持进程，使用锁（lock）进行并发控制，实现文件系统（file system）等。本书专注于这些核心思想。
 
-Xv6 is
-implemented as a monolithic kernel, like most Unix operating systems.
-Thus, the xv6 kernel interface corresponds to the operating system
-interface, and the kernel implements the complete operating system.  Since 
-xv6 doesn't provide many services, its kernel is smaller than some
-microkernels, but conceptually xv6 is monolithic.  
+Xv6 被实现为宏内核，与大多数 Unix 操作系统一样。因此，xv6 内核接口对应于操作系统接口，内核实现完整的操作系统。由于 xv6 不提供许多服务，其内核比某些微内核更小，但从概念上讲 xv6 是宏内核。  
 
-\section{Code: xv6 organization}
+\section{代码：xv6 组织结构}
 
 \begin{figure}[t]
 \center
 \begin{tabular}{l|l|l}
-& {\bf File} & {\bf Description} \\
+& {\bf 文件} & {\bf 描述} \\
 \midrule
-Boot & entry.S & Very first boot instructions. \\
- & main.c & Control initialization of other modules. \\
- & start.c & Early machine-mode boot code. \\
-Processes & exec.c & exec() system call. \\
- & proc.c & Processes and scheduling. \\
- & swtch.S & Thread switching. \\
- & sysproc.c & Process-related system calls. \\
-Traps & kernelvec.S & Handle traps from kernel code. \\
- & trampoline.S & Handle traps from user code. \\
- & trap.c & C code to handle and return from traps and interrupts. \\
- & syscall.c & Dispatch system calls to handling function. \\
-Memory & vm.c & Manage page tables and address spaces. \\
- & kalloc.c & Physical page allocator. \\
-Devices & console.c & Connect to the user keyboard and screen. \\
- & plic.c & RISC-V interrupt controller. \\
- & printf.c & Formatted output to the console. \\
- & uart.c & Serial-port console device driver. \\
- & virtio\_disk.c & Disk device driver. \\
-FS & bio.c & Disk block cache for the file system. \\
- & file.c & File descriptor support. \\
- & fs.c & File system. \\
- & log.c & File system logging and crash recovery. \\
- & sysfile.c & File-related system calls. \\
- & pipe.c & Pipes. \\
-Misc & sleeplock.c & Locks that yield the CPU. \\
- & spinlock.c & Locks that don't yield the CPU. \\
- & string.c & C string and byte-array library. \\
+启动 & entry.S & 最初的启动指令。 \\
+ & main.c & 控制其他模块的初始化。 \\
+ & start.c & 早期的机器模式启动代码。 \\
+进程 & exec.c & exec() 系统调用。 \\
+ & proc.c & 进程和调度。 \\
+ & swtch.S & 线程切换。 \\
+ & sysproc.c & 进程相关的系统调用。 \\
+陷入 & kernelvec.S & 处理来自内核代码的陷入。 \\
+ & trampoline.S & 处理来自用户代码的陷入。 \\
+ & trap.c & 处理和从陷入与中断返回的 C 代码。 \\
+ & syscall.c & 将系统调用分派给处理函数。 \\
+内存 & vm.c & 管理页表和地址空间。 \\
+ & kalloc.c & 物理页分配器。 \\
+设备 & console.c & 连接用户键盘和屏幕。 \\
+ & plic.c & RISC-V 中断控制器。 \\
+ & printf.c & 格式化输出到控制台。 \\
+ & uart.c & 串口控制台设备驱动。 \\
+ & virtio\_disk.c & 磁盘设备驱动。 \\
+文件系统 & bio.c & 文件系统的磁盘块缓存。 \\
+ & file.c & 文件描述符支持。 \\
+ & fs.c & 文件系统。 \\
+ & log.c & 文件系统日志和崩溃恢复。 \\
+ & sysfile.c & 文件相关的系统调用。 \\
+ & pipe.c & 管道。 \\
+其他 & sleeplock.c & 让出 CPU 的锁。 \\
+ & spinlock.c & 不让出 CPU 的锁。 \\
+ & string.c & C 字符串和字节数组库。 \\
 \end{tabular}
-\caption{Xv6 kernel source files.}
+\caption{Xv6 内核源文件。}
 \label{fig:source}
 \end{figure}
 
-The xv6 kernel source is in the {\tt kernel/} sub-directory.
-Figure~\ref{fig:source} lists the files, divided into the
-major areas of kernel responsibility: starting the
-system (booting), creating
-and controlling processes, handling traps (interrupts
-and system calls), allocating memory and configuring
-virtual addresses, controlling devices, and managing the
-file-system.
+xv6 内核源代码位于 {\tt kernel/} 子目录中。
+Figure~\ref{fig:source} 列出了这些文件，按内核的主要职责领域划分：启动系统（booting）、创建和控制进程、处理陷入（中断和系统调用）、分配内存和配置虚拟地址、控制设备，以及管理文件系统。
 
 %% 
 \section{Process overview}

@@ -1,0 +1,59 @@
+% 最小化中文 LaTeX 测试文档
+\documentclass[12pt]{article}
+\usepackage{xeCJK}
+
+% 字体配置（与 book.tex 一致）
+\IfFontExistsTF{FZShuSong-Z01S}{%
+  \setCJKmainfont{FZShuSong-Z01S}[%
+    BoldFont=FZHei-B01S,
+    ItalicFont=FZKai-Z03S
+  ]
+  \setCJKsansfont{FZLanTingHei-R-GBK}[%
+    BoldFont=FZLanTingHei-B-GBK
+  ]
+}{%
+  \IfFontExistsTF{Noto Serif CJK SC}{%
+    \setCJKmainfont{Noto Serif CJK SC}[%
+      BoldFont=Noto Sans CJK SC,
+      BoldFeatures={Weight=700}
+    ]
+    \setCJKsansfont{Noto Sans CJK SC}
+  }{%
+    \setCJKmainfont{WenQuanYi Micro Hei}
+    \setCJKsansfont{WenQuanYi Micro Hei}
+  }%
+}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+
+\begin{document}
+
+\title{xv6 中文测试}
+\author{Test}
+\maketitle
+
+\section{中文字体测试}
+
+这是正文测试。中文支持正常。
+
+\textbf{粗体测试：}这段文字应该是粗体。
+
+\textit{斜体测试：}这段文字使用楷体（如果可用）。
+
+\textsf{无衬线字体测试：}这段文字使用兰亭黑/Noto Sans。
+
+\section{English Text Test}
+
+This is English text with \textbf{bold} and \textit{italic}.
+
+\section{代码测试}
+
+\begin{verbatim}
+// 代码注释测试
+int main() {
+    return 0;
+}
+\end{verbatim}
+
+\end{document}

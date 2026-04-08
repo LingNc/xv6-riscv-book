@@ -25,10 +25,10 @@ booklet: src
 	mv xv6-riscv-src-booklet/xv6-src-booklet.pdf .
 
 book.pdf: booklet book.tex $(TEX)
-	pdflatex book.tex
+	xelatex book.tex
 	bibtex book
-	pdflatex book.tex
-	pdflatex book.tex
+	xelatex book.tex
+	xelatex book.tex
 
 
 lineref: $(TEX) booklet

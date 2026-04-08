@@ -1,6 +1,5 @@
 \documentclass[12pt]{book}
-\usepackage[T1]{fontenc}
-\usepackage{times}
+\usepackage{xeCJK}
 \usepackage{listings}
 \usepackage{graphicx}
 \usepackage{xcolor}
@@ -12,15 +11,61 @@
 \usepackage{etoolbox}  % for showidx
 \usepackage{fullpage}
 \usepackage{soul}
-\usepackage[utf8]{inputenc}
 \usepackage{gnuplot-lua-tikz}
 
+% 中文字体配置
+% 尝试使用方正字体，如不可用则回退到系统字体
+\IfFontExistsTF{FZShuSong-Z01S}{%
+  % 方正字体配置
+  \setCJKmainfont{FZShuSong-Z01S}[%
+    BoldFont=FZHei-B01S,
+    ItalicFont=FZKai-Z03S
+  ]
+  \setCJKsansfont{FZLanTingHei-R-GBK}[%
+    BoldFont=FZLanTingHei-B-GBK
+  ]
+  \setCJKmonofont{FZHei-B01S}
+}{%
+  \IfFontExistsTF{Noto Serif CJK SC}{%
+    % Noto CJK 字体配置（Linux 常见）
+    \setCJKmainfont{Noto Serif CJK SC}[%
+      BoldFont=Noto Sans CJK SC,
+      BoldFeatures={Weight=700},
+      ItalicFont=Noto Serif CJK SC
+    ]
+    \setCJKsansfont{Noto Sans CJK SC}[%
+      BoldFont=Noto Sans CJK SC,
+      BoldFeatures={Weight=700}
+    ]
+    \setCJKmonofont{Noto Sans Mono CJK SC}
+  }{%
+    \IfFontExistsTF{Source Han Serif SC}{%
+      % Source Han 字体配置
+      \setCJKmainfont{Source Han Serif SC}[%
+        BoldFont=Source Han Sans SC Bold,
+        ItalicFont=Source Han Serif SC
+      ]
+      \setCJKsansfont{Source Han Sans SC}[%
+        BoldFont=Source Han Sans SC Bold
+      ]
+      \setCJKmonofont{Source Han Sans SC}
+    }{%
+      % 最后的回退选项：WenQuanYi（文泉驿）
+      \setCJKmainfont{WenQuanYi Micro Hei}
+      \setCJKsansfont{WenQuanYi Micro Hei}
+      \setCJKmonofont{WenQuanYi Micro Hei Mono}
+    }%
+  }%
+}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Courier New}
+
 \usepackage{hyperref}  % should be last
-
-% One space after periods
-\frenchspacing
-
-\hypersetup{pdfauthor={Russ Cox, Frans Kaashoek, Robert Morris},
+\hypersetup{unicode=true,
+            pdfauthor={Russ Cox, Frans Kaashoek, Robert Morris},
             pdftitle={xv6: a simple, Unix-like teaching operating system},}
   
 \lstset{basicstyle=\small\ttfamily}
