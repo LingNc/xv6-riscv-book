@@ -1,112 +1,90 @@
-% 
+%
 % process has one thread with two stacks
-%  
-\chapter{Scheduling}
+%
+\chapter{调度}
 \label{CH:SCHED}
 
-Any operating system is likely to run with more processes than the
-computer has CPUs, so a plan is needed to time-share the
-CPUs among the processes. Ideally the sharing would be transparent to user
-processes.  A common approach is to provide each process
-with the illusion that it has its own virtual CPU by
-\indextext{multiplexing}
-the processes onto the hardware CPUs.
-This chapter explains how xv6 achieves this multiplexing.
+任何操作系统运行的进程数都可能超过计算机拥有的 CPU 数量，
+因此需要一个计划来在进程之间
+\indextext{多路复用（multiplexing）}
+CPU。理想情况下，这种共享对用户进程应该是透明的。
+一种常见的方法是通过将进程
+多路复用到硬件 CPU 上，为每个进程提供它拥有自己的虚拟 CPU 的幻觉。
+本章解释 xv6 如何实现这种多路复用。
 
-Before proceeding with this chapter, please read {\tt kernel/proc.h},
-{\tt kernel/swtch.S},
-and
-{\tt yield()},
-{\tt sched()},
-and
-{\tt schedule()}
-in {\tt kernel/proc.c}.
+在继续阅读本章之前，请先阅读 {\tt kernel/proc.h}、
+{\tt kernel/swtch.S}，
+以及 {\tt kernel/proc.c} 中的
+{\tt yield()}、
+{\tt sched()}
+和
+{\tt schedule()}。
 
-%% 
-\section{Multiplexing}
-%% 
+%%
+\section{多路复用}
+%%
 
-Xv6 multiplexes by switching each CPU from one process to
-another in two situations. First, xv6
-switches when a process makes a system
-call that blocks (has to wait), for example \lstinline{read} or
-\lstinline{wait}.
-Second, xv6 periodically forces a switch to cope with
-processes that compute for long periods without blocking.
-The former are called voluntary switches,
-the latter involuntary.
+Xv6 在两种情况下将每个 CPU 从一个进程切换到另一个进程来实现多路复用。
+首先，当进程进行阻塞的系统调用（必须等待）时，
+例如 \lstinline{read} 或 \lstinline{wait}，xv6 会进行切换。
+其次，xv6 定期强制切换以应对长时间计算而不阻塞的进程。
+前者称为自愿切换，
+后者称为非自愿切换。
 
-Implementing multiplexing poses a few challenges. First, how to switch from one
-process to another? 
-The basic idea is to save and restore CPU registers,
-though the fact that this cannot be expressed in C makes it tricky.
-Second, how to force
-switches in a way that is transparent to user processes?  Xv6 uses the
-standard technique in which a hardware timer's interrupts drive context switches.
-Third, all of the CPUs switch among the same set of processes, so a
-locking plan is necessary to avoid mistakes such as two CPUs deciding
-to run the same process at the same time. Fourth, a process's
-memory and other resources must be freed when the process exits,
-but it cannot finish all of this itself.
-Fifth, each CPU of a multi-core machine must remember which
-process it is executing so that system calls affect the correct
-process's kernel state.
+实现多路复用提出了一些挑战。首先，如何从一个进程切换到另一个进程？
+基本思想是保存和恢复 CPU 寄存器，
+尽管这无法用 C 语言表达，使其变得棘手。
+其次，如何以对用户进程透明的方式强制切换？Xv6 使用标准技术，
+即用硬件定时器的中断驱动上下文切换。
+第三，所有 CPU 都在同一组进程之间切换，因此需要一个锁定计划来避免错误，
+例如两个 CPU 决定同时运行同一个进程。
+第四，当进程退出时，必须释放其内存和其他资源，
+但它自己无法完成所有这些工作。
+第五，多核机器的每个 CPU 必须记住它正在执行哪个进程，
+以便系统调用影响正确的进程的内核状态。
 
-%% 
-\section{Context switch overview}
-%% 
+%%
+\section{上下文切换概述}
+%%
 
-The term ``context switch'' refers to the steps involved in a CPU
-leaving off execution of one kernel thread (usually for later
-resumption), and resuming execution of a different kernel thread; this
-switching is the heart of multiplexing. Xv6 does not directly context
-switch from one process's kernel thread to another process's kernel
-thread; instead, a kernel thread gives up the CPU by context-switching
-to that CPU's ``scheduler thread,'' and the scheduler thread picks a
-different process's kernel thread to run, and context-switches to that
-thread.
+术语``上下文切换（context switch）''指的是 CPU 停止执行一个内核线程（通常稍后恢复）并恢复执行不同内核线程所涉及的步骤；
+这种切换是多路复用的核心。Xv6 不直接从一个进程的内核线程上下文切换到另一个进程的内核线程；
+相反，内核线程通过上下文切换到该 CPU 的``调度器线程（scheduler thread）''来放弃 CPU，
+然后调度器线程选择一个不同的进程的内核线程来运行，并上下文切换到该线程。
 
 \begin{figure}[t]
 \center
 \includegraphics[scale=0.5]{fig/switch.pdf}
-\caption{Switching from one user process to another.  In this example, xv6 runs with one CPU (and thus one scheduler thread).}
+\caption{从一个用户进程切换到另一个用户进程。在此示例中，xv6 运行在一个 CPU 上（因此有一个调度器线程）。}
 \label{fig:switch}
 \end{figure}
 
-At a broader scope, the steps involved in switching from one user
-process to another are illustrated in Figure~\ref{fig:switch}: a trap
-(system call or interrupt) from the old process's user space to its
-kernel thread, a context switch to the current CPU's scheduler thread,
-a context switch to a new process's kernel thread, and a trap return
-to the user-level process.
+在更广泛的范围内，从一个用户进程切换到另一个用户进程所涉及的步骤如图~\ref{fig:switch} 所示：
+从旧进程的用户空间陷入（系统调用或中断）到其内核线程，
+上下文切换到当前 CPU 的调度器线程，
+上下文切换到新进程的内核线程，
+然后陷入返回到用户级进程。
 
 
-%% 
-\section{Code: Context switching}
-%% 
+%%
+\section{代码：上下文切换}
+%%
 
-The function {\tt swtch()} in {\tt kernel/swtch.S} contains the heart
-of thread context switching: it saves the switched-from thread's CPU
-registers, and restores the previously-saved registers of the
-switched-to thread. The basic reason this is sufficient is that a
-thread's state consist of data in memory (e.g. its stack) plus its CPU
-registers; thread memory need not saved and restored because different
-threads keep their data in different areas of RAM; but the CPU has
-only one set of registers so they must be switched (saved and
-restored) between threads.
+{\tt kernel/swtch.S} 中的函数 {\tt swtch()} 包含线程上下文切换的核心：
+它保存被切换线程的 CPU 寄存器，并恢复被切换线程之前保存的寄存器。
+这足够的基本原因是线程的状态由内存中的数据（例如其栈）加上其 CPU 寄存器组成；
+线程内存不需要保存和恢复，因为不同线程将数据保存在 RAM 的不同区域；
+但 CPU 只有一组寄存器，因此必须在线程之间切换（保存和恢复）它们。
 
 % why must it be in assembler? why not C?
 % why swtch(), not switch()?
 
-Each thread's {\tt struct proc} includes a {\tt struct context} that
-holds the thread's saved registers when it is not running. A CPU's
-scheduler thread's {\tt struct context} is in that CPU's {\tt struct
-  cpu}. When thread X wishes to switch to thread Y, thread X
-calls {\tt swtch(\&X's context, \&Y's context)}. {\tt swtch()}
-saves the current CPU registers in X's context, then loads the content
-of Y's context into the CPU registers, then returns.
+每个线程的 {\tt struct proc} 包含一个 {\tt struct context}，
+用于保存线程不运行时的已保存寄存器。CPU 调度器线程的 {\tt struct context} 位于该 CPU 的 {\tt struct cpu} 中。
+当线程 X 希望切换到线程 Y 时，线程 X 调用 {\tt swtch(\&X's context, \&Y's context)}。{\tt swtch()}
+将当前 CPU 寄存器保存在 X 的上下文中，然后将 Y 的上下文内容加载到 CPU 寄存器中，然后返回。
 
-Here's an abbreviated copy of {\tt swtch}:
+以下是 {\tt swtch} 的简化副本：
 
 \begin{verbatim}
 swtch:
@@ -121,313 +99,272 @@ swtch:
         ld s0, 16(a1)
         ...
         ld s11, 104(a1)
-        
+
         ret
 \end{verbatim}
 
-{\tt a0} holds the first function argument, and {\tt a1} the second;
-in this case, the two {\tt struct context} pointers.
-{\tt 16(a0)} refers to an offset 16 bytes into the memory
-pointed to by {\tt a0}; referring
-to the definition of {\tt struct context} in {\tt kernel/proc.h}
-\lineref{kernel/proc.h:/^struct.context/},
-this is the structure field called {\tt s0}.
+{\tt a0} 保存第一个函数参数，{\tt a1} 保存第二个参数；
+在这种情况下，是两个 {\tt struct context} 指针。
+{\tt 16(a0)} 指的是从 {\tt a0} 指向的内存偏移 16 字节；
+参考 {\tt kernel/proc.h} 中 {\tt struct context} 的定义
+\lineref{kernel/proc.h:/^struct.context/}，
+这是称为 {\tt s0} 的结构体字段。
 
-Where does {\tt swtch}'s {\tt ret} return to? It returns to the
-instruction that the {\tt ra} register points to. In the example in
-which thread X calls {\tt swtch()} to switch to Y, when {\tt ret}
-executes, {\tt ra} has just been loaded from Y's {\tt struct context}.
-And the {\tt ra} in Y's {\tt struct context} was originally saved by
-Y's call to {\tt swtch} when Y gave up the CPU in the past. So the
-{\tt ret} returns to the instruction after the point at which Y called
-{\tt swtch()}; that is, X's call to {\tt swtch()} returns as if
-returning from Y's original call to {\tt swtch()}. And {\tt sp} will
-be Y's stack pointer, since {\tt swtch} loaded {\tt sp} from Y's {\tt
-  struct context}; thus on return, Y will execute on its own stack.
-{\tt swtch()} need not directly save or restore the program counter;
-it's enough to save and restore {\tt ra}.
+{\tt swtch} 的 {\tt ret} 返回到哪里？它返回到 {\tt ra} 寄存器指向的指令。
+在线程 X 调用 {\tt swtch()} 切换到 Y 的示例中，当 {\tt ret}
+执行时，{\tt ra} 刚从 Y 的 {\tt struct context} 加载。
+而 Y 的 {\tt struct context} 中的 {\tt ra} 最初是由 Y 调用 {\tt swtch} 时保存的，
+当时 Y 放弃了 CPU。因此 {\tt ret} 返回到 Y 调用 {\tt swtch()} 之后的指令；
+也就是说，X 调用 {\tt swtch()} 返回，就好像从 Y 最初调用 {\tt swtch()} 返回一样。
+而且 {\tt sp} 将是 Y 的栈指针，因为 {\tt swtch} 从 Y 的 {\tt struct context} 加载了 {\tt sp}；
+因此在返回时，Y 将在自己的栈上执行。
+{\tt swtch()} 不需要直接保存或恢复程序计数器；
+保存和恢复 {\tt ra} 就足够了。
 
 \lstinline{swtch}
 \lineref{kernel/swtch.S:/swtch/}
-saves callee-saved registers ({\tt ra,sp,s0..s11}) but not caller-saved registers.
-The RISC-V calling convention requires that if code needs to
-preserve the value in a caller-saved register across a function
-call, the compiler must generate instructions
-that save the register to the stack before the function call,
-and restore from the stack when the
-function returns. So \lstinline{swtch} can rely on the function that
-called it having already saved the caller-saved registers (either
-that, or the calling function didn't need the values in the
-registers).
+保存被调用者保存的寄存器（{\tt ra,sp,s0..s11}），但不保存调用者保存的寄存器。
+RISC-V 调用约定要求，如果代码需要在函数调用之间保留调用者保存寄存器中的值，
+编译器必须生成指令，在函数调用之前将寄存器保存到栈中，
+并在函数返回时从栈中恢复。
+因此 \lstinline{swtch} 可以依赖调用它的函数已经保存了调用者保存的寄存器（要么是这样，
+要么是调用函数不需要寄存器中的值）。
 
-%% 
-\section{Code: Scheduling}
-%% 
+%%
+\section{代码：调度}
+%%
 
 % why a separate thread
 
-The last section looked at the internals of
-\indexcode{swtch};
-now let's take 
+上一节介绍了
+\indexcode{swtch}
+的内部实现；
+现在让我们将
 \lstinline{swtch}
-as a given and examine 
-switching from one process's kernel thread
-through the scheduler to another process.
-The scheduler exists in the form of a special thread per CPU, each running the
+视为给定，并研究从一个进程的内核线程
+通过调度器切换到另一个进程。
+调度器以每个 CPU 一个特殊线程的形式存在，每个线程运行
 \lstinline{scheduler}
-function.
-This function is in charge of choosing which process to run next.
-Each CPU has its own scheduler thread because more than one CPU may be
-looking for something to run at any given time. Process switching
-always goes through the scheduler thread, rather than direct from one
-process to another, to avoid some situations in which there would be
-no stack on which to execute the scheduler (e.g. if the old process
-has exited, or there is no other process that currently wants to run).
+函数。
+该函数负责选择接下来运行哪个进程。
+每个 CPU 都有自己的调度器线程，因为可能有多个 CPU 在任何给定时间寻找要运行的东西。
+进程切换总是通过调度器线程进行，而不是直接从一个进程切换到另一个进程，
+以避免在某些情况下调度器没有栈可以执行（例如，如果旧进程已退出，或当前没有其他进程想要运行）。
 
-A process
-that wants to give up the CPU must
-acquire its own process lock
-\indexcode{p->lock},
-release any other locks it is holding,
-update its own state
-(\lstinline{p->state}),
-and then call
-\indexcode{sched}.
-You can see this sequence in
+想要放弃 CPU 的进程必须
+获取自己的进程锁
+\indexcode{p->lock}，
+释放它持有的任何其他锁，
+更新自己的状态
+(\lstinline{p->state})，
+然后调用
+\indexcode{sched}。
+你可以在
 \lstinline{yield}
-\lineref{kernel/proc.c:/^yield/},
+\lineref{kernel/proc.c:/^yield/}、
 \texttt{sleep}
-and
-\texttt{kexit}.
+和
+\texttt{kexit}
+中看到这一系列操作。
 \indexcode{sched}
-calls
+调用
 \indexcode{swtch}
-to save the current context in 
+将当前上下文保存在
 \lstinline{p->context}
-and switch to the scheduler context in
-\indexcode{cpu->context}.
+中，并切换到
+\indexcode{cpu->context}
+中的调度器上下文。
 \lstinline{swtch}
-returns on the scheduler's stack
-as though
-\indexcode{scheduler}'s
+在调度器的栈上返回，
+就好像
+\indexcode{scheduler}
+的
 \lstinline{swtch}
-had returned
-\lineref{kernel/proc.c:/swtch.*contex.*contex/}.
+已经返回一样
+\lineref{kernel/proc.c:/swtch.*contex.*contex/}。
 
 \lstinline{scheduler}
-\lineref{kernel/proc.c:/^scheduler/} 
-runs a loop:
-find a process to run, {\tt swtch()} to it, eventually it
-will {\tt swtch()} back to the scheduler, which continues its loop.
-The scheduler
-loops over the process table
-looking for a runnable process, one that has
-\lstinline{p->state} 
+\lineref{kernel/proc.c:/^scheduler/}
+运行一个循环：
+找到一个要运行的进程，{\tt swtch()} 到它，最终它会 {\tt swtch()} 回调度器，然后调度器继续其循环。
+调度器遍历进程表，
+寻找可运行的进程，即具有
+\lstinline{p->state}
 \lstinline{==}
-\lstinline{RUNNABLE}.
-Once it finds a process, it sets the per-CPU current process
-variable
-\lstinline{c->proc},
-marks the process as
-\lstinline{RUNNING},
-and then calls
+\lstinline{RUNNABLE}
+的进程。
+一旦找到进程，它就设置每个 CPU 的当前进程
+变量
+\lstinline{c->proc}，
+将进程标记为
+\lstinline{RUNNING}，
+然后调用
 \indexcode{swtch}
-to start running it
-\linerefs{kernel/proc.c:/Switch.to/,/swtch/}.
-At some point in the past, the target process must
-have called {\tt swtch()}; the scheduler's call to
-{\tt swtch()} effectively returns from that
-earlier call.
-Figure~\ref{fig:inout} illustrates this pattern.
+开始运行它
+\linerefs{kernel/proc.c:/Switch.to/,/swtch/}。
+在过去的某个时刻，目标进程必须调用了 {\tt swtch()}；
+调度器对 {\tt swtch()} 的调用有效地从该早期调用返回。
+图~\ref{fig:inout} 说明了这种模式。
 
 \begin{figure}[t]
 \input{fig/switch.tex}
-\caption{{\tt swtch()} always has the scheduler thread as either source
-or destination, and the relevant {\tt p->lock} is always held.}
+\caption{{\tt swtch()} 总是以调度器线程作为源或目标，并且相关的 {\tt p->lock} 总是保持持有。}
 \label{fig:inout}
 \end{figure}
 
-xv6 holds
+xv6 在调用
+\lstinline{swtch}
+时保持
 \indexcode{p->lock}
-across calls to
-\lstinline{swtch}:
-the caller of
-\indexcode{swtch}
-acquires the lock,
-but it's released in the target after {\tt swtch} returns.
-This arrangement is unusual: it's more common for
-the thread that acquires a lock to also release it.
-Xv6's context switching breaks this convention because
+：
+\lstinline{swtch}
+的调用者获取锁，
+但在 {\tt swtch} 返回后在目标中释放它。
+这种安排是不寻常的：更常见的是获取锁的线程也释放它。
+Xv6 的上下文切换打破了这一约定，因为
 \indexcode{p->state}
-and
+和
 \lstinline{p->context}
-must be updated together atomically.
-For example, if
-\lstinline{p->lock}
-were released before invoking 
-\indexcode{swtch},
-a different CPU $c$ might decide
-to run the process because
-its state is \lstinline{RUNNABLE}.
-CPU $c$ will invoke \lstinline{swtch}
-which will restore from \lstinline{p->context}
-while the original CPU
-is still saving into
-\lstinline{p->context}.
-The result would be that the process
-would be restored with partially-saved registers on CPU $c$ and
-that both CPUs will be using the same stack,
-which would cause chaos.
-Once \lstinline{yield} has started to modify a running process's state
-to make it
-\lstinline{RUNNABLE},
-\lstinline{p->lock} must remain held until
-the process has saved all its registers and
-the scheduler is running on its stack.
-The earliest correct release point is after
-\lstinline{scheduler}
-(running on its own stack)
-clears
-\lstinline{c->proc}.
-Similarly, once 
-\lstinline{scheduler}
-starts to convert a \lstinline{RUNNABLE} process to
-\lstinline{RUNNING},
-the lock cannot be released until the process's kernel thread
-is completely running (after the
-\lstinline{swtch},
-for example in
-\lstinline{yield}).
-
-There is one case when the scheduler's call to
+必须一起原子地更新。
+例如，如果在调用
 \indexcode{swtch}
-does not end up in
-\indexcode{sched}.
-\lstinline{allocproc} sets the context \lstinline{ra}
-register of a new process to
+之前释放
+\lstinline{p->lock}，
+不同的 CPU $c$ 可能会决定运行该进程，因为
+其状态是 \lstinline{RUNNABLE}。
+CPU $c$ 将调用 \lstinline{swtch}，
+它将从 \lstinline{p->context} 恢复，
+而原始 CPU 仍在向
+\lstinline{p->context}
+保存。
+结果将是该进程将在 CPU $c$ 上用部分保存的寄存器恢复，
+而且两个 CPU 将使用相同的栈，这会导致混乱。
+一旦 \lstinline{yield} 开始修改运行进程的状态
+使其成为
+\lstinline{RUNNABLE}，
+\lstinline{p->lock} 必须保持持有，直到
+进程已保存所有寄存器且
+调度器在其栈上运行。
+最早正确的释放点是在
+\lstinline{scheduler}
+（在其自己的栈上运行）
+清除
+\lstinline{c->proc}
+之后。
+同样，一旦
+\lstinline{scheduler}
+开始将 \lstinline{RUNNABLE} 进程转换为
+\lstinline{RUNNING}，
+在该进程的内核线程完全运行之前（在
+\lstinline{swtch}
+之后，例如在
+\lstinline{yield}
+中）不能释放锁。
+
+有一种情况，调度器对
+\indexcode{swtch}
+的调用不会最终进入
+\indexcode{sched}。
+\lstinline{allocproc} 将新进程的上下文 {\tt ra}
+寄存器设置为
 \indexcode{forkret}
-\lineref{kernel/proc.c:/^forkret/},
-so that its first \lstinline{swtch} ``returns'' 
-to the start of that function.
+\lineref{kernel/proc.c:/^forkret/}，
+因此其第一次 \lstinline{swtch} ``返回''到该函数的开头。
 \lstinline{forkret}
-exists to release the 
+存在是为了释放
 \indexcode{p->lock}
-and set up some control registers and trapframe
-fields that are required in order to return to user space.
-At the end, {\tt forkret} simulates the normal return
-path from a system call back to user space.
+并设置一些控制寄存器和陷入帧字段，
+这些是返回用户空间所需的。
+最后，{\tt forkret} 模拟从系统调用返回到用户空间的正常返回路径。
 
 
-%% 
-\section{Code: mycpu and myproc}
-%% 
+%%
+\section{代码：mycpu 和 myproc}
+%%
 
-Xv6 often needs a pointer to the current process's \lstinline{proc}
-structure. On a uniprocessor one could have a global variable pointing
-to the current \lstinline{proc}. This doesn't work on a multi-core
-machine, since each CPU executes a different process. The way to
-solve this problem is to exploit the fact that each CPU has its own
-set of registers.
+Xv6 经常需要指向当前进程的 \lstinline{proc} 结构体的指针。
+在单处理器上，可以有一个全局变量指向当前 \lstinline{proc}。
+这在多核机器上不起作用，因为每个 CPU 执行不同的进程。
+解决这个问题的方法是利用每个 CPU 都有自己的寄存器组这一事实。
 
-While a given CPU is executing in the kernel, xv6 ensures that the CPU's \lstinline{tp}
-register always holds the CPU's hartid.
-RISC-V numbers its CPUs, giving each
-a unique \indextext{hartid}.
+当给定 CPU 在内核中执行时，xv6 确保 CPU 的 \lstinline{tp}
+寄存器始终保存 CPU 的 hartid。
+RISC-V 对其 CPU 进行编号，给每个一个唯一的 \indextext{hartid}。
 \indexcode{mycpu}
 \lineref{kernel/proc.c:/^mycpu/}
-uses \lstinline{tp} to index an array
-of \lstinline{cpu} structures and return the one
-for the current CPU.
-A
+使用 \lstinline{tp} 索引一个
+\lstinline{cpu} 结构体数组，并返回当前 CPU 的那个结构体。
 \indexcode{struct cpu}
 \lineref{kernel/proc.h:/^struct.cpu/}
-holds a pointer to the \lstinline{proc}
-structure of
-the process currently running
-on that CPU (if any),
-saved registers for the CPU's scheduler thread,
-and the count of nested spinlocks needed to manage
-interrupt disabling.
+保存一个指向正在该 CPU 上运行的
+进程的 \lstinline{proc} 结构体的指针（如果有），
+CPU 调度器线程的已保存寄存器，
+以及管理中断禁用所需的嵌套自旋锁计数。
 
-Ensuring that a CPU's \lstinline{tp} holds the CPU's
-hartid is a little involved, since user code is free
-to modify \lstinline{tp}. \lstinline{start} sets the \lstinline{tp}
-register early in the CPU's boot sequence, while still in machine mode
-\lineref{kernel/start.c:/w_tp/}.
-While preparing to return to user space,
-\lstinline{prepare_return} saves \lstinline{tp} in the trampoline
-page, in case user code modifies it.
-Finally, \lstinline{uservec} restores that saved \lstinline{tp}
-when entering the kernel from user space
-\lineref{kernel/trampoline.S:/make tp hold/}.
-The compiler guarantees never to modify \lstinline{tp}
-in kernel code.
-It would be more convenient if xv6 could ask the RISC-V
-hardware for the current hartid whenever needed,
-but RISC-V allows that only in
-machine mode, not in supervisor mode.
+确保 CPU 的 \lstinline{tp} 保存 CPU 的 hartid 有点复杂，因为用户代码可以自由修改 \lstinline{tp}。
+\lstinline{start} 在 CPU 启动序列的早期设置 \lstinline{tp}
+寄存器，同时仍在机器模式中
+\lineref{kernel/start.c:/w_tp/}。
+在准备返回到用户空间时，
+\lstinline{prepare_return} 将 \lstinline{tp} 保存在跳板页中，以防用户代码修改它。
+最后，\lstinline{uservec} 在从用户空间进入内核时恢复保存的 \lstinline{tp}
+\lineref{kernel/trampoline.S:/make tp hold/}。
+编译器保证在内核代码中从不修改 \lstinline{tp}。
+如果 xv6 可以在需要时询问 RISC-V 硬件获取当前 hartid 会更方便，
+但 RISC-V 只允许在机器模式中这样做，而在监管者模式中不行。
 
-The return values of
 \lstinline{cpuid}
-and
+和
 \lstinline{mycpu}
-are fragile: if the timer were to interrupt and cause
-the thread to yield and later resume execution on a different CPU,
-a previously returned value would no longer be correct.
-To avoid this problem, xv6 requires code to
-disable interrupts before calling {\tt cpuid()} or {\tt mycpu()},
-and only enable
-interrupts when done using the returned value.
+的返回值是脆弱的：
+如果定时器中断并导致线程让出，然后稍后在不同的 CPU 上恢复执行，
+先前返回的值将不再正确。
+为了避免这个问题，xv6 要求代码在调用 {\tt cpuid()} 或 {\tt mycpu()} 之前禁用中断，
+并且只在使用完返回值后才启用中断。
 
-The function
+函数
 \indexcode{myproc}
 \lineref{kernel/proc.c:/^myproc/}
-returns the
+返回当前 CPU 上运行的进程的
 \lstinline{struct proc}
-pointer
-for the process that is running on the current CPU.
+指针。
 \lstinline{myproc}
-disables interrupts, invokes
-\lstinline{mycpu},
-fetches the current process pointer
-(\lstinline{c->proc})
-out of the
-\lstinline{struct cpu},
-and then enables interrupts.
-The return value of
+禁用中断，调用
+\lstinline{mycpu}，
+从
+\lstinline{struct cpu}
+中获取当前进程指针
+(\lstinline{c->proc})，
+然后启用中断。
+即使启用了中断，
 \lstinline{myproc}
-is safe to use even if interrupts are enabled:
-if a timer interrupt moves the calling process to a
-different CPU, its
+的返回值也是安全可用的：
+如果定时器中断将调用进程移动到不同的 CPU，其
 \lstinline{struct proc}
-pointer will stay the same.
+指针将保持不变。
 
 
-%% 
-\section{Real world}
-%% 
+%%
+\section{现实世界}
+%%
 
-The xv6 scheduler implements a simple scheduling policy that runs each process
-in turn.  This policy is called
-\indextext{round robin}.
-Real operating systems implement more sophisticated policies that, for example,
-allow processes to have priorities.  The idea is that a runnable high-priority process
-will be preferred by the scheduler over a runnable low-priority process.   These
-policies can become complex because there are often competing goals: for
-example, the operating system might also want to guarantee fairness and
-high throughput.
+xv6 调度器实现了一个简单的调度策略，轮流运行每个进程。
+这种策略称为
+\indextext{轮询（round robin）}。
+真实操作系统实现更复杂的策略，例如，允许进程具有优先级。
+其思想是可运行的高优先级进程将被调度器优先于可运行的低优先级进程。
+这些策略可能变得复杂，因为通常有相互竞争的目标：
+例如，操作系统可能还想保证公平性和高吞吐量。
 
-%% 
-\section{Exercises}
-%% 
+%%
+\section{练习}
+%%
 
 \begin{enumerate}
 
-\item Modify xv6 to use only one context switch when switching from
-  one process's kernel thread to another, rather than switching
-  through the scheduler thread. The yielding thread will need to select
-  the next thread itself and call \texttt{swtch}. The challenges will
-  be to prevent multiple CPUs from executing the same thread accidentally;
-  to get the locking right; and to avoid deadlocks.
+\item 修改 xv6，使得从一个进程的内核线程切换到另一个进程时只使用一次上下文切换，
+  而不是通过调度器线程切换。让出的线程需要自己选择下一个线程并调用 \texttt{swtch}。
+  挑战将是防止多个 CPU 意外执行同一线程；
+  正确处理锁定；以及避免死锁。
 
 \end{enumerate}
