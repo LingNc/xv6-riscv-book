@@ -382,6 +382,37 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 - `book.tex`: 主文档，包含字体配置
 - `build-cn.sh`: 编译脚本，含字体检查
 - `Makefile`: 构建配置（使用 xelatex）
+- `test-cn.tex`: 最小化中文测试文档
+
+### 当前环境状态（2026-04-08）
+
+**字体配置**: 四级回退机制已配置
+- 方正字体 → Noto CJK → Source Han → WenQuanYi
+
+**系统字体状态**:
+```
+✅ Noto Serif CJK SC      (可用)
+✅ Noto Sans CJK SC       (可用)
+✅ Noto Sans Mono CJK SC  (可用)
+❌ FZShuSong-Z01S         (未安装)
+❌ FZLanTingHei-R-GBK     (未安装)
+❌ Source Han Serif SC    (未安装)
+❌ WenQuanYi Micro Hei    (未安装)
+```
+
+**预期实际使用字体**: Noto Serif CJK SC / Noto Sans CJK SC
+
+**编译器状态**:
+```
+❌ xelatex    (未安装)
+❌ pdflatex   (未安装)
+❌ lualatex   (未安装)
+```
+
+**待办事项**:
+- [ ] 安装 texlive-xetex: `sudo apt-get install texlive-xetex texlive-lang-chinese`
+- [ ] 运行编译测试: `./build-cn.sh`
+- [ ] 验证 PDF 生成和中文显示
 
 ## Git 规范
 - commit 信息简略明确
@@ -394,7 +425,7 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 |------|------|--------|------|----------|
 | acks.tex | 待翻译 | - | 39 | 低 |
 | unix.tex | 待翻译 | - | 1116 | 高-历史叙述长 |
-| first.tex | 待翻译 | - | 701 | 中-专业术语密集 |
+| first.tex | 审查中 | Reviewer | 701 | 中-专业术语密集 |
 | mem.tex | 待翻译 | - | 924 | 高-内存概念复杂 |
 | trap.tex | 待翻译 | - | 512 | 高-CPU细节多 |
 | pgfault.tex | 待翻译 | - | 296 | 中-页故障逻辑 |
@@ -407,5 +438,9 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 | sum.tex | 待翻译 | - | 14 | 低 |
 
 ## 当前焦点
-- 术语挖掘与术语表完善
+- first.tex 质量审查进行中 (Reviewer)
+- 待安装 texlive-xetex 以完成 LaTeX 中文编译环境
+  - 安装命令: `sudo apt-get install texlive-xetex texlive-lang-chinese`
+  - 当前可用字体: Noto Serif/Sans CJK SC (系统已预装)
+  - 方正字体需手动安装（可选）
 - 优先级: first.tex (入门章节) -> unix.tex (基础概述)
