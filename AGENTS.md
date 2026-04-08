@@ -428,8 +428,8 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 | 章节 | 状态 | 负责人 | 行数 | 风险标注 |
 |------|------|--------|------|----------|
 | acks.tex | 待翻译 | - | 39 | 低 |
-| unix.tex | 待翻译 | - | 1116 | 高-历史叙述长 |
-| first.tex | 审查中 | Reviewer | 701 | 中-专业术语密集 |
+| unix.tex | 翻译中 | Translator | 1116 | 高-历史叙述长 |
+| first.tex | ✅ 已完成 | Translator | 701 | 中-专业术语密集 |
 | mem.tex | 待翻译 | - | 924 | 高-内存概念复杂 |
 | trap.tex | 待翻译 | - | 512 | 高-CPU细节多 |
 | pgfault.tex | 待翻译 | - | 296 | 中-页故障逻辑 |
@@ -442,9 +442,9 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 | sum.tex | 待翻译 | - | 14 | 低 |
 
 ## 当前焦点
-1. **first.tex质量审查** - Reviewer进行中
+1. **unix.tex翻译** - Translator进行中
 2. **编译环境** - ✅ 已就绪 (TeX Live 2026 + xelatex + Fandol字体)
-3. **下一章节候选** - unix.tex (1116行) 或 mem.tex (924行)
+3. **下一章节候选** - mem.tex (924行)
 
 ## 已完成里程碑
 - ✅ 术语挖掘: 120+术语，7组易混淆清单
