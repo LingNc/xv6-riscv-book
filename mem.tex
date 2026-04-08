@@ -6,233 +6,102 @@
 %   do we ever really say what the low two bits of %cs do?
 %     in particular their interaction with PTE_U
 %   sidebar about why it is extern char[]
-\chapter{Page tables}
+\chapter{页表}
 \label{CH:MEM}
 
-Page tables are the most popular mechanism through which the operating
-system provides each process with its own private address space and
-memory.  Page tables determine what memory addresses mean, and what
-parts of physical memory can be accessed. They allow xv6 to isolate
-different processes' address spaces and to multiplex them onto a single
-physical memory. Page tables provide
-a level of indirection that allows operating systems to perform many useful
-tricks. Xv6 performs a few: mapping the same memory
-(a trampoline page) in several address spaces, guarding kernel and
-user stacks with an unmapped page, and allocating user heap memory lazily.
-The rest of this chapter explains
-the page tables that the RISC-V hardware provides and how xv6 uses
-them.
+页表（page table）是操作系统为每个进程提供其私有地址空间和内存的最流行机制。页表决定内存地址的含义，以及物理内存的哪些部分可以被访问。它们允许 xv6 隔离不同进程的地址空间并将其多路复用到单个物理内存上。页表提供了一层间接性，允许操作系统执行许多有用的技巧。Xv6 执行了一些：在多个地址空间中映射相同的内存（trampoline 页），用未映射的页保护内核和用户栈，以及延迟分配用户堆内存。本章的其余部分解释了 RISC-V 硬件提供的页表以及 xv6 如何使用它们。
 
-%% 
-\section{Paging hardware}
-%% 
-As a reminder,
-RISC-V instructions (both user and kernel) manipulate virtual addresses.
-The machine's RAM, or physical memory, is indexed with physical
-addresses.
-The RISC-V page table hardware connects these two kinds of addresses,
-by mapping each virtual address to a physical address.
+%%
+\section{分页硬件}
+%%
+作为提醒，RISC-V 指令（用户和内核）操作虚拟地址（virtual address）。机器的 RAM 或物理内存（physical memory）使用物理地址索引。RISC-V 页表硬件通过将每个虚拟地址映射到物理地址来连接这两种地址。
 
 \begin{figure}[t]
 \center
 \includegraphics[scale=0.5]{fig/riscv_address.pdf}
-\caption{An abstract view of a flat page table mapping virtual
-to physical addresses.}
+\caption{平坦页表将虚拟地址映射到物理地址的抽象视图。}
 \label{fig:riscv_address}
 \end{figure}
 
-Xv6 uses RISC-V's Sv39 mode, which means that only the bottom 39
-bits of a 64-bit virtual address are used; the top 25 bits
-are not used.
-In this Sv39 configuration, a
-RISC-V page table is logically an array of $2^{27}$ (134,217,728)
-\indextext{page table entries (PTEs)}.  Each PTE contains a 44-bit
-physical page number (PPN) and some flags. The paging hardware
-translates a virtual address by using the top 27 bits of the 39 bits
-to index into the page table to find a PTE, and making a 56-bit
-physical address whose top 44 bits come from the PPN in the PTE
-and whose bottom 12 bits are copied from the original virtual address.
-Figure~\ref{fig:riscv_address} shows this
-process with a logical view of the page table as a simple array of PTEs
-(the RISC-V page table is actually a tree;
-see Figure~\ref{fig:riscv_pagetable} for a fuller story).
-A page table
-gives the operating system control over virtual-to-physical address
-translations at the granularity of aligned chunks of 4096 ($2^{12}$)
-bytes.  Such a chunk is called a \indextext{page}.
+Xv6 使用 RISC-V 的 Sv39 模式，这意味着 64 位虚拟地址只有低 39 位被使用；高 25 位不使用。在此 Sv39 配置中，RISC-V 页表逻辑上是 $2^{27}$ (134,217,728) 个
+\indextext{page table entries (PTEs)}（页表项）的数组。每个 PTE 包含一个 44 位的物理页号（PPN）和一些标志。分页硬件使用 39 位中的高 27 位索引到页表中找到 PTE，并生成一个 56 位的物理地址，其高 44 位来自 PTE 中的 PPN，低 12 位从原始虚拟地址复制。
+Figure~\ref{fig:riscv_address}
+显示了此过程，页表的逻辑视图是 PTE 的简单数组（RISC-V 页表实际上是一棵树；参见 Figure~\ref{fig:riscv_pagetable} 了解完整故事）。页表使操作系统能够以 4096 ($2^{12}$) 字节对齐块的粒度控制虚拟到物理地址转换。这样的块称为 \indextext{page}（页）。
 
 \begin{figure}[t]
 \center
 \includegraphics[scale=0.5]{fig/riscv_pagetable.pdf}
-\caption{RISC-V address translation details.}
+\caption{RISC-V 地址转换细节。}
 \label{fig:riscv_pagetable}
 \end{figure}
 
-RISC-V's design leaves room for expansion of both virtual and physical
-addresses. If more virtual address space is needed, RISC-V supports an
-Sv48 mode, with 48-bit virtual addresses~\cite{riscv:priv}.
-Physical addresses also have room for growth: there is
-room in the PTE format for the physical page number to grow by another
-10 bits.  The designers of RISC-V chose address sizes based on
-technology predictions.  $2^{48}$ bytes is 262,144 GB,
-a much larger user virtual address space than any application is likely
-to use today.
-$2^{56}$ bytes of physical address space is 65,536 terabytes, much
-more RAM than any computer can currently be equipped with.
+RISC-V 的设计为虚拟地址和物理地址的扩展留下了空间。如果需要更多的虚拟地址空间，RISC-V 支持 Sv48 模式，具有 48 位虚拟地址~\cite{riscv:priv}。物理地址也有扩展空间：PTE 格式中有空间让物理页号再增长 10 位。RISC-V 的设计者根据技术预测选择了地址大小。$2^{48}$ 字节是 262,144 GB，比今天任何应用程序可能使用的用户虚拟地址空间大得多。$2^{56}$ 字节的物理地址空间是 65,536 TB，比目前任何计算机可以配备的 RAM 都多得多。
 
-As 
-Figure~\ref{fig:riscv_pagetable} shows,
-a RISC-V CPU page table is stored
-in physical memory as a three-level tree.
-The root of the tree is a
-4096-byte page-table page that contains 512 PTEs, which contain the physical
-addresses for page-table pages in the next level of the tree.  Each of those
-pages contains 512 PTEs for the final level in the tree.  The paging
-hardware uses the top 9 bits of the 27 bits to select a PTE in the
-root page-table page, the middle 9 bits to select a PTE in a page-table page in the
-next level of the
-tree, and the bottom 9 bits to select the final PTE.
-(In Sv48 RISC-V a page table has four levels, and bits 39 through 47
-of a virtual address index into the top-level.)
-
-If any of the three PTEs required to translate an address
-is not present, the paging hardware raises a \indextext{page-fault exception}, leaving it up
-to the kernel to handle the page fault (see Chapters~\ref{CH:TRAP} and~\ref{CH:PGFAULTS}).
-
-The three-level structure of Figure~\ref{fig:riscv_pagetable} allows a
-memory-efficient way of recording PTEs, compared to the single-level
-design of Figure~\ref{fig:riscv_address}.  In the common case in which
-large ranges of virtual addresses have no mappings, the three-level
-structure can omit entire page directories.  For example, if an
-application uses only a few pages starting at address zero, then the
-entries 1 through 511 of the top-level page directory are invalid, and
-the kernel doesn't have to allocate pages those for 511 intermediate
-page directories.  Furthermore, the kernel also doesn't have to
-allocate pages for the bottom-level page directories for those 511
-intermediate page directories. So, in this example, the three-level
-design saves 511 pages for intermediate page directories and
-$511\times512$ pages for bottom-level page directories.
-
-Although a CPU walks the three-level structure in hardware as part of
-executing a load or store instruction, a potential downside of three
-levels is that the CPU must load three PTEs from memory to perform the
-translation of the virtual address in the load/store instruction to a
-physical address.  To avoid the cost of loading PTEs from physical
-memory, a RISC-V CPU caches page table entries in a
-\indextext{Translation Look-aside Buffer (TLB)}.
-
-Each PTE contains flag bits that tell the paging hardware
-how the associated virtual address is allowed to be used.
-\indexcode{PTE_V}
-indicates whether the PTE is present: if it is
-not set, a reference to the page causes a page fault (i.e., is not allowed).
-\indexcode{PTE_R}
-controls whether instructions are allowed to 
-read to the page.
-\indexcode{PTE_W}
-controls whether instructions are allowed to 
-write to the page.
-\indexcode{PTE_X}
-controls whether the CPU may interpret the content
-of the page as instructions and execute them.
-\indexcode{PTE_U}
-controls whether instructions in user mode are allowed
-to access the page;
-if \indexcode{PTE_U} is not set, the PTE can be used only in supervisor mode.
+如
 Figure~\ref{fig:riscv_pagetable}
-shows where the flag bits sit in a PTE.
-The flags and all other page hardware-related structures are defined in
+所示，RISC-V CPU 页表作为三级树存储在物理内存中。树的根是一个 4096 字节的页表页，包含 512 个 PTE，其中包含树下一级页表页的物理地址。这些页中的每一个都包含树最后一级的 512 个 PTE。分页硬件使用 27 位中的高 9 位在根页表页中选择 PTE，中间 9 位在树下一级的页表页中选择 PTE，低 9 位选择最终的 PTE。（在 Sv48 RISC-V 中，页表有四级，虚拟地址的 39 到 47 位索引到顶级。）
+
+如果转换地址所需的三个 PTE 中任何一个不存在，分页硬件会引发 \indextext{page-fault exception}（页错误异常），由内核处理页错误（参见 Chapters~\ref{CH:TRAP} 和~\ref{CH:PGFAULTS}）。
+
+与 Figure~\ref{fig:riscv_address} 的单级设计相比，Figure~\ref{fig:riscv_pagetable} 的三级结构允许以更节省内存的方式记录 PTE。在虚拟地址大范围没有映射的常见情况下，三级结构可以省略整个页目录。例如，如果应用程序只使用从地址零开始的少数几页，那么顶级页目录的条目 1 到 511 是无效的，内核不需要为这 511 个中间页目录分配页面。此外，内核也不需要为这 511 个中间页目录的底层页目录分配页面。因此，在这个例子中，三级设计节省了 511 个中间页目录页面和 $511\times512$ 个底层页目录页面。
+
+尽管 CPU 在执行加载或存储指令时会以硬件方式遍历三级结构，但三级的一个潜在缺点是 CPU 必须从内存加载三个 PTE 才能将加载/存储指令中的虚拟地址转换为物理地址。为了避免从物理内存加载 PTE 的开销，RISC-V CPU 将页表项缓存在
+\indextext{Translation Look-aside Buffer (TLB)}（转换后备缓冲器）中。
+
+每个 PTE 包含标志位，告诉分页硬件如何使用关联的虚拟地址。
+\indexcode{PTE_V}
+指示 PTE 是否存在：如果未设置，对页面的引用会导致页错误（即不允许）。
+\indexcode{PTE_R}
+控制是否允许指令读取页面。
+\indexcode{PTE_W}
+控制是否允许指令写入页面。
+\indexcode{PTE_X}
+控制 CPU 是否可以将页面内容解释为指令并执行它们。
+\indexcode{PTE_U}
+控制用户模式中的指令是否允许访问页面；如果
+\indexcode{PTE_U}
+未设置，PTE 只能在监管者模式中使用。
+Figure~\ref{fig:riscv_pagetable}
+显示了标志位在 PTE 中的位置。标志和所有其他与页面硬件相关的结构定义在
 \fileref{kernel/riscv.h}
+中。
 
-To tell a CPU to use a page table, the kernel must
-write the physical address of the root page-table page into the 
-\texttt{satp}\index{satp@\lstinline{satp}} register.
-A CPU will translate all addresses generated by subsequent instructions
-using the page table pointed to by its \texttt{satp}.
-Each CPU has its own \texttt{satp} so that different CPUs can run
-different processes, each with a private address space described by
-its own page table.
+为了让 CPU 使用页表，内核必须将根页表页的物理地址写入
+\texttt{satp}\index{satp@\lstinline{satp}}
+寄存器。CPU 将使用其 \texttt{satp} 指向的页表翻译后续指令生成的所有地址。每个 CPU 都有自己的 \texttt{satp}，因此不同的 CPU 可以运行不同的进程，每个进程都有自己的页表描述的私有地址空间。
 
-From the kernel's point of view, a page table is data stored in
-memory, and the kernel creates and modifies page tables using code
-much like you might see for any tree-shaped data structure.
+从内核的角度看，页表是存储在内存中的数据，内核使用类似于树形数据结构的代码创建和修改页表。
 
-A few notes about terms used in this book. \textit{Physical memory}
-refers to storage cells in RAM. A byte of physical memory has an
-address, called a \textit{physical address}. Instructions that
-dereference addresses (such as loads, stores, jumps, and function calls)
-use only
-virtual addresses, which the paging hardware translates to physical
-addresses, and then sends to the RAM hardware to read or write
-storage. An \textit{address space} is the set of virtual addresses
-that are valid in a given page table; each xv6 process has a separate
-user address space, and the xv6 kernel has its own address space as
-well. \textit{User memory} refers to a process's user address space
-plus the physical memory that the page table allows the process to
-access. \textit{Virtual memory} refers to the ideas and techniques
-associated with managing page tables and using them to achieve goals
-such as isolation.
+关于本书中使用的一些术语的说明。\textit{物理内存}（Physical memory）指 RAM 中的存储单元。物理内存的字节有一个地址，称为 \textit{物理地址}（physical address）。解引用地址的指令（如加载、存储、跳转和函数调用）只使用虚拟地址（virtual address），分页硬件将其转换为物理地址，然后发送到 RAM 硬件读取或写入存储。\textit{地址空间}（address space）是给定页表中有效的虚拟地址集合；每个 xv6 进程有独立的用户地址空间，xv6 内核也有自己的地址空间。\textit{用户内存}（User memory）指进程的用户地址空间加上页表允许进程访问的物理内存。\textit{虚拟内存}（Virtual memory）指与页表管理和使用它们实现隔离等目标相关的想法和技术。
 
 \begin{figure}[h]
 \centering
  \includegraphics[scale=0.65]{fig/xv6_layout.pdf}
-\caption{On the left, xv6's kernel virtual address space.
+\caption{左侧，xv6 的内核虚拟地址空间。
 {\sf \small{RWX}}
-refer to PTE read, write, and execute permissions.
-On the right, the RISC-V physical address space that
-xv6 expects to see.}
+指 PTE 的读、写和执行权限。
+右侧，xv6 期望看到的 RISC-V 物理地址空间。}
 \label{fig:xv6_layout}
 \end{figure}
 
-%% 
-\section{Kernel address space}
-%% 
-When it starts, xv6 creates a single page table
-describing the kernel's address space.
-The kernel configures the layout of its address space to
-give itself
-access to physical memory and
-various hardware resources at predictable virtual addresses.
+%%
+\section{内核地址空间}
+%%
+启动时，xv6 创建一个描述内核地址空间的页表。内核配置其地址空间布局，使自己能够访问物理内存和各种硬件资源的可预测虚拟地址。
 Figure~\ref{fig:xv6_layout}
-shows how this layout maps
-kernel virtual addresses to physical addresses.  The file
+显示了此布局如何将内核虚拟地址映射到物理地址。文件
 \fileref{kernel/memlayout.h}
-declares the constants for xv6's kernel memory layout.
+声明了 xv6 内核内存布局的常量。
 
-QEMU simulates a computer that includes RAM (physical memory) starting
-at physical address \texttt{0x80000000} and continuing through
-at least \texttt{0x88000000}, which xv6 calls \texttt{PHYSTOP}.
-The QEMU simulation also
-includes I/O devices
-such as a disk interface.
-QEMU exposes the device interfaces to software as
-\indextext{memory-mapped}
-control registers that sit below
-\texttt{0x80000000}
-in the physical address space.
-The kernel can interact with the devices by reading/writing
-these special physical addresses; such reads and writes communicate
-with the device hardware rather than with RAM.
-Chapter~\ref{CH:TRAP} explains
-how xv6 interacts with devices.
+QEMU 模拟一台计算机，包括从物理地址 \texttt{0x80000000} 开始并至少持续到 \texttt{0x88000000} 的 RAM（物理内存），xv6 称之为 \texttt{PHYSTOP}。QEMU 模拟还包括 I/O 设备，如磁盘接口。QEMU 将设备接口作为位于物理地址空间 \texttt{0x80000000} 以下的
+\indextext{memory-mapped}（内存映射）
+控制寄存器暴露给软件。内核可以通过读取/写入这些特殊物理地址与设备交互；此类读取和写入与设备硬件通信而不是与 RAM 通信。Chapter~\ref{CH:TRAP} 解释 xv6 如何与设备交互。
 
-The kernel maps all physical RAM and device
-registers at virtual addresses equal to the
-physical addresses.
-This is called ``direct mapping,'' and allows the kernel
-to read or write physical address $x$ simply by loading
-or storing to virtual address $x$.
-The kernel code itself is located at \lstinline{KERNBASE=0x80000000} in both
-the virtual address space and in physical memory.
-When \lstinline{kfork}
+内核将所有物理 RAM 和设备寄存器映射到等于物理地址的虚拟地址。这称为``直接映射''，允许内核通过简单地加载或存储虚拟地址 $x$ 来读取或写入物理地址 $x$。内核代码本身位于虚拟地址空间和物理内存中的 \lstinline{KERNBASE=0x80000000}。当 \lstinline{kfork}
 \lineref{kernel/proc.c:/^kfork/}
-allocates user memory for the child process,
-the allocator returns the physical address of that memory;
-\lstinline{kfork} uses that address directly as a virtual
-address when it is copying the parent's user memory to the child.
+为子进程分配用户内存时，分配器返回该内存的物理地址；\lstinline{kfork} 在将父进程的用户内存复制到子进程时直接使用该地址作为虚拟地址。
 
-There are a couple of kernel virtual
-addresses that aren't direct-mapped:
+有几个内核虚拟地址不是直接映射的：
 
 \begin{itemize}
   
@@ -255,294 +124,180 @@ addresses that aren't direct-mapped:
 
 \end{itemize}
 
-While the kernel uses its stacks via the high-memory mappings, each
-is also accessible to the kernel through a direct-mapped address. An
-alternate design might have just the direct mapping, and use the
-stacks at the direct-mapped address. In that arrangement, however,
-providing guard pages would involve unmapping virtual addresses that
-would otherwise refer to physical memory, which would then be hard to
-use.
+虽然内核通过高内存映射使用其栈，但每个栈也可以通过直接映射地址访问内核。另一种设计可能只有直接映射，并在直接映射地址使用栈。然而，在这种安排中，提供保护页将涉及取消映射否则会引用物理内存的虚拟地址，这将很难使用。
 
-The kernel maps the pages for the trampoline and the kernel text with
-the permissions
+内核将 trampoline 和内核文本页映射为具有
 \lstinline{PTE_R}
-and
-\lstinline{PTE_X}, but not \lstinline{PTE_W}.
-The kernel maps other pages with the permissions
+和
+\lstinline{PTE_X}
+权限，但没有 \lstinline{PTE_W}。
+内核将其他页映射为具有
 \lstinline{PTE_R}
-and
-\lstinline{PTE_W},
-but not \lstinline{PTE_X}.
-The mappings for the guard pages are invalid.
-The purpose of these restricted permissions is to help
-catch kernel bugs that access pages in unexpected
-ways, for example if kernel code accidentally tried
-to write over kernel instructions.
+和
+\lstinline{PTE_W}
+权限，但没有 \lstinline{PTE_X}。
+保护页映射是无效的。这些受限权限的目的是帮助捕获以意外方式访问页的内核错误，例如如果内核代码意外尝试写入内核指令。
 
-The kernel creates a single kernel page table, used by all CPUs when
-they execute in the kernel. xv6 does not modify the kernel page
-table after initially creating it.
+内核创建一个单一的内核页表，所有 CPU 在内核中执行时使用它。xv6 在最初创建后不会修改内核页表。
 
-%% 
-\section{Code: creating an address space}
-%% 
+%%
+\section{代码：创建地址空间}
+%%
 
-Please read {\tt kernel/vm.c} through the end of {\tt mappages()}
-before proceeding.
+请在继续之前阅读 {\tt kernel/vm.c} 到 {\tt mappages()} 的结尾。
 
-Most of the xv6 code for manipulating address spaces and
-page tables resides in {\tt vm.c}
-\fileref{kernel/vm.c}.
-The central data structure is {\tt pagetable\_t}, which
-is really a pointer to a RISC-V root page-table page;
-a {\tt pagetable\_t} may be either the kernel
-page table, or one of the per-process page tables.
-The central functions are {\tt walk},
-which finds the PTE for a virtual address,
-and {\tt mappages}, which installs PTEs for new mappings.
-Functions starting with {\tt kvm} manipulate
-the kernel page table; functions starting with {\tt uvm}
-manipulate a user page table; other functions are
-used for both.
-{\tt copyout} and {\tt copyin} copy data to and from
-user virtual addresses provided as system call arguments;
-they are in {\tt vm.c} because they need to explicitly
-translate those addresses in order to find the corresponding
-physical memory.
+大部分用于操作地址空间和页表的 xv6 代码位于 {\tt vm.c}
+\fileref{kernel/vm.c}。
+中心数据结构是 {\tt pagetable\_t}，它实际上是指向 RISC-V 根页表页的指针；{\tt pagetable\_t} 可以是内核页表或每个进程的页表之一。中心函数是 {\tt walk}，它查找虚拟地址的 PTE，以及 {\tt mappages}，它安装新映射的 PTE。以 {\tt kvm} 开头的函数操作内核页表；以 {\tt uvm} 开头的函数操作用户页表；其他函数用于两者。{\tt copyout} 和 {\tt copyin} 将数据复制到作为系统调用参数提供的用户虚拟地址或从该地址复制；它们在 {\tt vm.c} 中，因为它们需要显式转换这些地址以找到相应的物理内存。
 
-Early in the boot sequence,
+在启动序列的早期，
 \indexcode{main}
-calls
+调用
 \indexcode{kvminit}
 \lineref{kernel/vm.c:/^kvminit/}
-to create the kernel's page table using
+使用
 \indexcode{kvmmake}
-\lineref{kernel/vm.c:/^kvmmake/}.
-This call occurs before xv6 has enabled paging on the RISC-V,
-so addresses refer directly to physical memory.
+\lineref{kernel/vm.c:/^kvmmake/}
+创建内核的页表。此调用发生在 xv6 在 RISC-V 上启用分页之前，因此地址直接引用物理内存。
 \lstinline{kvmmake}
-first allocates a page of physical memory to hold the root page-table page.
-Then it calls
+首先分配一页物理内存来保存根页表页。然后它调用
 \indexcode{kvmmap}
-to install the translations that the kernel needs.
-The translations include the kernel's
-instructions and data, physical memory up to
-\indexcode{PHYSTOP},
-and memory ranges which are actually devices.
-\indexcode{proc_mapstacks}
-\lineref{kernel/proc.c:/^proc_mapstacks/}
-allocates a kernel stack for each
-process. It calls \lstinline{kvmmap} to map each stack at the virtual address generated by
-\lstinline{KSTACK}, which leaves room for the invalid stack-guard
-pages.
+来安装内核需要的转换。转换包括内核的指令和数据、高达
+\indexcode{PHYSTOP}
+的物理内存，以及实际上是设备的内存范围。
+\indexcode{proc\_mapstacks}
+\lineref{kernel/proc.c:/^proc\_mapstacks/}
+为每个进程分配一个内核栈。它调用 \lstinline{kvmmap} 将每个栈映射到由
+\lstinline{KSTACK}
+生成的虚拟地址，这为无效的栈保护页留出了空间。
 
 \indexcode{kvmmap} 
 \lineref{kernel/vm.c:/^kvmmap/}
 calls
 \indexcode{mappages}
-\lineref{kernel/vm.c:/^mappages/},
-which
-installs mappings into a page table
-for a range of virtual addresses to
-a corresponding range of physical addresses.
-It does this separately for each virtual address in the range,
-at page intervals.
-For each virtual address to be mapped,
+\lineref{kernel/vm.c:/^mappages/}，
+它在页表中为一组虚拟地址安装映射到相应的物理地址范围。它以页间隔对范围内的每个虚拟地址执行此操作。对于要映射的每个虚拟地址，
 \lstinline{mappages}
-calls
+调用
 \indexcode{walk}
-to find the address of the PTE for that address.
-It then initializes the PTE to hold the relevant physical page
-number, the desired permissions 
-(\lstinline{PTE_W},
-\lstinline{PTE_X},
-and/or
-\lstinline{PTE_R}),
-and
+来查找该地址的 PTE 地址。然后它初始化 PTE 以保存相关的物理页号、所需的权限
+（\lstinline{PTE_W}、
+\lstinline{PTE_X}
+和/或
+\lstinline{PTE_R}），
+以及
 \lstinline{PTE_V}
-to mark the PTE as valid
-\lineref{kernel/vm.c:/perm...PTE_V/}.
+以将 PTE 标记为有效
+\lineref{kernel/vm.c:/perm...PTE_V/}。
 
 \indexcode{walk}
 \lineref{kernel/vm.c:/^walk/}
-mimics the RISC-V paging hardware as it
-looks up the PTE for a virtual address (see
-Figure~\ref{fig:riscv_pagetable}).
+模仿 RISC-V 分页硬件查找虚拟地址的 PTE（参见
+Figure~\ref{fig:riscv_pagetable}）。
 \lstinline{walk}
-descends the page table tree one level at a time,
-using each level's 9 bits of virtual address to
-index into the relevant page directory page.
-At each level it finds either the PTE of the
-next level's page directory page, or the PTE of
-final page
-\lineref{kernel/vm.c:/pte.=..pagetable/}.
-If a PTE in a first or second level page directory
-page isn't valid, then the required directory page
-hasn't yet been allocated;
-if the
+逐级下降页表树，使用每级的 9 位虚拟地址索引到相关的页目录页。在每一级，它找到下一级页目录页的 PTE 或最终页的 PTE
+\lineref{kernel/vm.c:/pte.=..pagetable/}。
+如果第一级或第二级页目录页中的 PTE 无效，则所需的目录页尚未分配；如果
 \lstinline{alloc}
-argument is set,
+参数已设置，
 \lstinline{walk}
-allocates a new page-table page and puts its physical address in the PTE.
-It returns the address of the PTE in the lowest layer in the tree
-\lineref{kernel/vm.c:/return..pagetable/}.
+分配一个新的页表页并将其物理地址放入 PTE。它返回树中最底层 PTE 的地址
+\lineref{kernel/vm.c:/return..pagetable/}。
 
-The above code depends on physical memory being direct-mapped into the
-kernel virtual address space. For example, as \lstinline{walk} descends levels
-of the page table, it pulls the (physical) address of the
-next-level-down page table from a PTE \lineref{kernel/vm.c:/pagetable.=..pa.*E2P/},
-and then uses that address as a
-virtual address to fetch the PTE at the next level down
-\lineref{kernel/vm.c:/t..pte.=..paget/}.
+上述代码依赖于物理内存直接映射到内核虚拟地址空间。例如，当 \lstinline{walk} 逐级下降页表时，它从 PTE 中提取下一级页表的（物理）地址 \lineref{kernel/vm.c:/pagetable.=..pa.*E2P/}，然后使用该地址作为虚拟地址来获取下一级 PTE
+\lineref{kernel/vm.c:/t..pte.=..paget/}。
 
-On each CPU,
+在每个 CPU 上，
 \indexcode{main}
-calls
+调用
 \indexcode{kvminithart}
 \lineref{kernel/vm.c:/^kvminithart/}
-to install the kernel page table,
-placing
-the physical address of the root page-table page
-into the CPU's 
+来安装内核页表，将根页表页的物理地址放入 CPU 的
 \texttt{satp}
-register.
-After this the CPU translates addresses using the kernel
-page table. The kernel continues to execute correctly
-because the kernel page table is direct-mapped, so that
-addresses refer to the same locations in RAM before
-and after this change.
+寄存器。此后，CPU 使用内核页表翻译地址。内核继续正确执行，因为内核页表是直接映射的，因此地址在此更改前后引用 RAM 中的相同位置。
 
-Each RISC-V CPU caches page table entries in a
-\indextext{Translation Look-aside Buffer (TLB)}, and when xv6 changes
-a page table, it must tell the CPU to invalidate corresponding
-cached TLB entries.  If it didn't,
-then at some point later the TLB might
-use an old cached mapping, pointing to a physical page that in the meantime
-has been allocated to another process, and as a result, a process
-might be able to scribble on some other process's memory.  The RISC-V
-has an instruction \indexcode{sfence.vma} that flushes
-the current CPU's TLB.
-Xv6 executes {\tt sfence.vma} in {\tt kvminithart}  after reloading the 
-\texttt{satp} register, and in the trampoline code for
-\lstinline{uservec} and \lstinline{userret}.
+每个 RISC-V CPU 在
+\indextext{Translation Look-aside Buffer (TLB)}（转换后备缓冲器）中缓存页表项，当 xv6 更改页表时，它必须告诉 CPU 使相应的缓存 TLB 条目无效。如果没有这样做，那么在之后的某个时刻，TLB 可能会使用旧的缓存映射，指向在此期间已分配给另一个进程的物理页，结果进程可能会在其他进程的内存上涂鸦。RISC-V 有一条指令 \indexcode{sfence.vma} 刷新当前 CPU 的 TLB。Xv6 在重新加载
+\texttt{satp}
+寄存器后在 {\tt kvminithart} 中执行 {\tt sfence.vma}，以及在
+\lstinline{uservec}
+和 \lstinline{userret} 的 trampoline 代码中执行。
 
-It is also necessary to issue \texttt{sfence.vma} before changing
-\texttt{satp}, in order to wait for completion of all outstanding loads and
-stores. This wait ensures that preceding updates to the page table have
-completed, and ensures that preceding loads and stores use the old
-page table, not the new one.
+在更改
+\texttt{satp}
+之前，还需要发出 \texttt{sfence.vma}，以等待所有未完成的加载和存储完成。此等待确保对页表的先前更新已完成，并确保先前的加载和存储使用旧页表，而不是新页表。
 
-\section{Physical memory allocation}
+\section{物理内存分配}
 
-The kernel must allocate and free physical memory at run-time for
-page tables,
-user memory,
-kernel stacks,
-and pipe buffers.
+内核必须在运行时分配和释放物理内存，用于页表、用户内存、内核栈和管道缓冲区。
 
-Xv6 uses the physical memory between the end of the kernel and
+Xv6 使用内核末尾和
 \indexcode{PHYSTOP}
-for run-time allocation. It allocates and frees whole 4096-byte pages
-at a time. It keeps track of which pages are free by threading a
-linked list through the pages themselves. Allocation consists of
-removing a page from the linked list; freeing consists of adding the
-freed page to the list.
+之间的物理内存进行运行时分配。它每次分配和释放整个 4096 字节的页。它通过在页面本身中线程化一个链表来跟踪哪些页面是空闲的。分配包括从链表中删除一页；释放包括将释放的页面添加到列表中。
 
-Please read {\tt kernel/kalloc.c}.
+请阅读 {\tt kernel/kalloc.c}。
 
-%% 
-\section{Code: Physical memory allocator}
-%% 
+%%
+\section{代码：物理内存分配器}
+%%
 
-The allocator resides in {\tt kalloc.c} \fileref{kernel/kalloc.c}.
-The allocator's data structure is a
-\textit{free list}
-of physical memory pages that are available
-for allocation.
-Each free page's ``next'' pointer resides in a
+分配器位于 {\tt kalloc.c} \fileref{kernel/kalloc.c}。分配器的数据结构是一个
+\textit{空闲列表}（free list），
+包含可用于分配的物理内存页。每个空闲页的``下一个''指针位于
 \indexcode{struct run}
-\lineref{kernel/kalloc.c:/^struct.run/}.
-The allocator stores each free page's
+\lineref{kernel/kalloc.c:/^struct.run/}。
+分配器将每个空闲页的
 \lstinline{run}
-structure in the free page itself,
-since there's nothing else stored there
-while the page is free.
-The free list is
-protected by a spin lock
-\linerefs{kernel/kalloc.c:/^struct.{/,/}/}.
-The list and the lock are wrapped in a struct
-to make clear that the lock protects the fields
-in the struct.
-For now, ignore the lock and the calls to
+结构存储在空闲页本身中，因为在页面空闲时没有存储其他内容。空闲列表受到自旋锁的保护
+\linerefs{kernel/kalloc.c:/^struct.{/,/}/}。
+列表和锁包装在一个结构体中，以明确锁保护结构体中的字段。现在，忽略锁和对
 \lstinline{acquire}
-and
-\lstinline{release};
-Chapter~\ref{CH:LOCK} will examine
-locking in detail.
+和
+\lstinline{release}
+的调用；Chapter~\ref{CH:LOCK} 将详细讨论锁定。
 
-The function
+函数
 \indexcode{main}
-calls
+调用
 \indexcode{kinit}
-to initialize the allocator
-\lineref{kernel/kalloc.c:/^kinit/}.
+来初始化分配器
+\lineref{kernel/kalloc.c:/^kinit/}。
 \lstinline{kinit}
-initializes the free list to hold
-every page of physical RAM between the end of the kernel and {\tt PHYSTOP}.
-Xv6 ought to determine how much physical
-memory is available by parsing configuration information 
-provided by the hardware.
-Instead xv6 assumes that the machine has
-128 megabytes of RAM.
+将空闲列表初始化为保存内核末尾和 {\tt PHYSTOP} 之间的每个物理 RAM 页。Xv6 应该通过解析硬件提供的配置信息来确定有多少物理内存可用。相反，xv6 假设机器有 128 MB 的 RAM。
 \lstinline{kinit}
-calls
+调用
 \indexcode{freerange}
-to add memory to the free list via per-page calls to
-\indexcode{kfree}.
-A PTE can only refer to a physical address that is aligned
-on a 4096-byte boundary (is a multiple of 4096), so
+通过每页调用
+\indexcode{kfree}
+来将内存添加到空闲列表。PTE 只能引用对齐到 4096 字节边界（是 4096 的倍数）的物理地址，因此
 \lstinline{freerange}
-uses
+使用
 \indexcode{PGROUNDUP}
-to ensure that it frees only aligned physical addresses.
-The allocator starts with no memory;
-these calls to
+来确保它仅释放对齐的物理地址。分配器从没有内存开始；这些对
 \lstinline{kfree}
-give it some to manage.
+的调用给它一些内存来管理。
 
-The allocator sometimes treats addresses as integers
-in order to perform arithmetic on them (e.g.,
-traversing all pages in
-\lstinline{freerange}),
-and sometimes uses addresses as pointers to read and
-write memory (e.g., manipulating the
+分配器有时将地址视为整数以便对它们执行算术（例如，在
+\lstinline{freerange}
+中遍历所有页），有时使用地址作为指针来读取和写入内存（例如，操作存储在每页中的
 \lstinline{run}
-structure stored in each page);
-this dual use of addresses is the main reason that the
-allocator code is full of C type-casts.
+结构）；地址的这种双重用途是分配器代码充满 C 类型转换的主要原因。
 \index{type cast}
 
-The function
+函数
 \lstinline{kfree}
 \lineref{kernel/kalloc.c:/^kfree/}
-begins by setting every byte in the
-memory being freed to the value 1.
-This will cause code that uses memory after freeing it
-(uses ``dangling references'')
-to read garbage instead of the old valid contents;
-hopefully that will cause such code to break faster.
-Then
+首先将正在释放的内存中的每个字节设置为值 1。这将导致在释放内存后使用内存的代码（使用``悬空引用''）读取垃圾而不是旧的 valid 内容；希望这将导致此类代码更快地崩溃。然后
 \lstinline{kfree}
-prepends the page to the free list:
-it casts
+将页面前置到空闲列表：它将
 \lstinline{pa}
-to a pointer to
+转换为指向
 \lstinline{struct}
-\lstinline{run},
-records the old start of the free list in
-\lstinline{r->next},
-and sets the free list equal to
-\lstinline{r}.
+\lstinline{run}
+的指针，将空闲列表的旧开始记录在
+\lstinline{r->next}，
+并将空闲列表设置为
+\lstinline{r}。
 \indexcode{kalloc}
 removes and returns the first element in the free list.
 
@@ -582,111 +337,79 @@ Similarly, by mapping data without \lstinline{PTE_X}, a user program
 cannot accidentally jump to an address in the program's data and start
 executing at that address.
 
-In the real world, hardening a process by setting permissions
-carefully also aids in defending against security attacks.  An
-adversary may feed carefully-constructed input to a program (e.g., a
-Web server) that triggers a bug in the program in the hope of turning
-that bug into an exploit~\cite{aleph:smashing}.  Setting permissions
-carefully and other techniques, such as randomizing of the layout of the
-user address space, make such attacks harder.
+在现实世界中，通过仔细设置权限来强化进程也有助于防御安全攻击。攻击者可能向程序（例如 Web 服务器）提供精心构造的输入，触发程序中的错误，希望将该错误转化为漏洞利用~\cite{aleph:smashing}。仔细设置权限和其他技术，如用户地址空间布局的随机化，使此类攻击更难。
 
-The stack is a single page, and is shown with the initial contents as
-created by the {\tt exec} system call.  Strings containing the command-line arguments, as
-well as an array of pointers to them, are at the very top of the
-stack.  Just under that are values that allow a program to start at
-\lstinline{main} as if the function \lstinline{main(argc},
-\lstinline{argv)} had just been called.
+栈是单页，显示为 {\tt exec} 系统调用创建的初始内容。包含命令行参数的字符串以及指向它们的指针数组位于栈的最顶部。就在那下面是允许程序在
+\lstinline{main}
+开始执行，就好像函数 \lstinline{main(argc}、\lstinline{argv)} 刚刚被调用一样。
 
-To detect a user stack overflowing the allocated stack memory, xv6
-places an inaccessible guard page right below the stack by clearing
-the \lstinline{PTE_U} flag. If the user stack overflows and the
-process tries to use an address below the stack, the hardware will
-generate a page-fault exception because the guard page is inaccessible
-to a program running in user mode. A real-world operating system might
-instead automatically allocate more memory for the user stack when it
-overflows.
+为了检测用户栈溢出分配的栈内存，xv6 通过清除 \lstinline{PTE_U} 标志在栈正下方放置一个不可访问的保护页。如果用户栈溢出并且进程尝试使用栈下方的地址，硬件将生成页错误异常，因为保护页对用户模式下运行的程序不可访问。现实世界的操作系统可能会在栈溢出时自动为用户栈分配更多内存。
 
-We see here a few nice examples of use of page tables.  First,
-different processes' page tables translate user addresses to different
-pages of physical memory, so that each process has private user
-memory.  Second, each process sees its memory as having contiguous
-virtual addresses starting at zero, while the process's physical
-memory can be non-contiguous.  Third, the kernel maps a page with
-trampoline code at the top of the user address space (without
-\lstinline{PTE_U}), thus a single page of physical memory shows up in
-all address spaces, but can be used only by the kernel.
+我们在这里看到了一些页表使用的很好的例子。首先，不同进程的页表将用户地址转换为不同的物理内存页，因此每个进程都有私有的用户内存。其次，每个进程将其内存视为具有从零开始的连续虚拟地址，而进程的物理内存可以是非连续的。第三，内核在用户地址空间顶部映射一个具有 trampoline 代码的页（没有 \lstinline{PTE_U}），因此单个物理内存页出现在所有地址空间中，但只能由内核使用。
 
 \begin{figure}[t]
 \center
 \includegraphics[scale=0.5]{fig/processlayout.png}
-\caption{A process's user address space, with its initial stack.}
+\caption{进程的用户地址空间及其初始栈。}
 \label{fig:processlayout}
 \end{figure}
 
 
-%% 
-\section{Code: exec}
-%% 
+%%
+\section{代码：exec}
+%%
 
-Please read {\tt kernel/exec.c} and {\tt kernel/vm.c}
-starting at {\tt uvmcreate()}.
+请阅读 {\tt kernel/exec.c} 和 {\tt kernel/vm.c}，从 {\tt uvmcreate()} 开始。
 
-\lstinline{exec} is a system call that replaces a process's
-user address space with data read from a file, called a binary
-or executable file.
-A binary is typically the output of the compiler and linker,
-and holds machine instructions and program data.
-\lstinline{kexec} \lineref{kernel/exec.c:/^kexec/},
-the kernel's internal implementation of {\tt exec}, opens the
-named binary \lstinline{path} using \indexcode{namei}
-\lineref{kernel/exec.c:/namei/}, which is explained in
-Chapter~\ref{CH:FS}.  Then, it reads the ELF header. Xv6 binaries
-are formatted in the widely-used \indextext{ELF format}, defined in
-\fileref{kernel/elf.h}.  An ELF binary consists of an ELF header,
-\indexcode{struct elfhdr} \lineref{kernel/elf.h:/^struct.elfhdr/},
-followed by a sequence of program section headers,
-\lstinline{struct proghdr} \lineref{kernel/elf.h:/^struct.proghdr/}.  Each
-\lstinline{proghdr} describes a section of the application that must
-be loaded into memory; xv6 programs have two program section
-headers: one for instructions and one for data.
+\lstinline{exec} 是一个系统调用，用从文件读取的数据（称为二进制或可执行文件）替换进程的用户地址空间。二进制通常是编译器和链接器的输出，保存机器指令和程序数据。
+\lstinline{kexec} \lineref{kernel/exec.c:/^kexec/}，
+{\tt exec} 的内核内部实现，使用 \indexcode{namei}
+\lineref{kernel/exec.c:/namei/}
+打开命名的二进制文件 \lstinline{path}，这在 Chapter~\ref{CH:FS} 中解释。然后，它读取 ELF 头。Xv6 二进制文件以广泛使用的 \indextext{ELF format}（ELF 格式）格式化，定义在
+\fileref{kernel/elf.h}。ELF 二进制文件由 ELF 头
+\indexcode{struct elfhdr} \lineref{kernel/elf.h:/^struct.elfhdr/}、
+后跟一系列程序段头
+\lstinline{struct proghdr} \lineref{kernel/elf.h:/^struct.proghdr/} 组成。每个
+\lstinline{proghdr}
+描述必须加载到内存中的应用段；xv6 程序有两个程序段头：一个用于指令，一个用于数据。
 
-The first step is a quick check that the file probably contains an
-ELF binary.
-An ELF binary starts with the four-byte ``magic number''
-\lstinline{0x7F},
-\lstinline{`E'},
-\lstinline{`L'},
-\lstinline{`F'},
-or
+第一步是快速检查文件是否可能包含 ELF 二进制文件。ELF 二进制文件以四字节``魔数''
+\lstinline{0x7F}、
+\lstinline{`E'}、
+\lstinline{`L'}、
+\lstinline{`F'}
+或
 \indexcode{ELF_MAGIC}
-\lineref{kernel/elf.h:/ELF_MAGIC/}.
-If the ELF header has the right magic number,
+\lineref{kernel/elf.h:/ELF_MAGIC/} 开头。
+如果 ELF 头具有正确的魔数，
 \lstinline{kexec}
-assumes that the binary is well-formed.
+假设二进制文件格式正确。
 
 \lstinline{kexec}
-allocates a new page table with no user mappings with
-\indexcode{proc_pagetable}
-\lineref{kernel/exec.c:/proc_pagetable/},
-allocates memory for each ELF segment with
+使用
+\indexcode{proc\_pagetable}
+\lineref{kernel/exec.c:/proc\_pagetable/}
+分配一个没有用户映射的新页表，使用
 \indexcode{uvmalloc}
-\lineref{kernel/exec.c:/uvmalloc/},
-and loads each segment into memory with
+\lineref{kernel/exec.c:/uvmalloc/}
+为每个 ELF 段分配内存，并使用
 \indexcode{loadseg}
-\lineref{kernel/exec.c:/loadseg/}.
+\lineref{kernel/exec.c:/loadseg/}
+将每个段加载到内存中。
 \lstinline{loadseg}
-uses
+使用
 \indexcode{walkaddr}
-to find the physical address of the allocated memory at which to write
+来查找分配的内存的物理地址，以便写入
 each page of the ELF segment, and
 \indexcode{readi}
 to read from the file.
 
-The program section header for
-\indexcode{/init},
-the first user program created with
-\lstinline{exec},
-looks like this:
+\indexcode{/init}
+的程序段头，
+用
+\lstinline{exec}
+创建的第一个用户程序，
+看起来像这样：
 \begin{footnotesize}
 \begin{verbatim}
 # objdump -p user/_init
@@ -733,192 +456,110 @@ allocates enough physical memory to hold 0x30 bytes, but reads only 0x10 bytes
 from the file
 \lstinline{/init}.
 
-Now
+现在
 \indexcode{kexec}
-allocates and initializes the user stack.
-It allocates just one stack page.
+分配并初始化用户栈。它只分配一个栈页。
 \lstinline{kexec}
-copies the argument strings to the top of the stack
-one at a time, recording the pointers to them in
-\indexcode{ustack}.
-It places a null pointer at the end of what will be the
+将参数字符串一次一个地复制到栈顶，在
+\indexcode{ustack}
+中记录指向它们的指针。它在
 \indexcode{argv}
-list passed to
-\lstinline{main}.
-The values for \indexcode{argc} and \lstinline{argv} are passed to \lstinline{main}
-through the system-call return path:  \lstinline{argc} is passed via the
-system call return value, which goes in {\tt a0}, and \lstinline{argv} is passed through
-the {\tt a1} entry of the process's trapframe.
+列表的末尾放置一个空指针，该列表将传递给
+\lstinline{main}。
+\indexcode{argc}
+和 \lstinline{argv} 的值通过系统调用返回路径传递给 \lstinline{main}：\lstinline{argc} 通过系统调用返回值传递，放在 {\tt a0} 中，\lstinline{argv} 通过进程 trapframe 的 {\tt a1} 条目传递。
 
 \lstinline{kexec}
-places an inaccessible page just below the stack page,
-so that programs that try to use more than one page will fault.
-This inaccessible page also allows
+在栈页正下方放置一个不可访问的页，因此尝试使用多个页的程序将出错。此不可访问的页还允许
 \lstinline{kexec}
-to deal with arguments that are too large;
-in that situation,
-the
+处理太大的参数；在这种情况下，
+\lstinline{kexec}
+使用的
 \indexcode{copyout}
 \lineref{kernel/vm.c:/^copyout/}
-function that
-\lstinline{kexec}
-uses to copy arguments to the stack will notice that
-the destination page is not accessible, and will
-return -1.
+函数将注意到目标页不可访问，并将返回 -1。
 
-During the preparation of the new memory image,
-if
+在准备新内存映像期间，如果
 \lstinline{kexec}
-detects an error like an invalid program segment,
-it jumps to the label
-\lstinline{bad},
-frees the new image,
-and returns -1.
+检测到错误（如无效程序段），它会跳转到标签
+\lstinline{bad}，
+释放新映像，并返回 -1。
 \lstinline{kexec}
-must wait to free the old image until it
-is sure that the system call will succeed:
-if the old image is gone,
-the system call cannot return -1 to it.
-The only error cases in
+必须等到确定系统调用成功后才能释放旧映像：如果旧映像已消失，系统调用无法向它返回 -1。
 \lstinline{kexec}
-happen during the creation of the image.
-Once the image is complete,
+中的唯一错误情况发生在映像创建期间。一旦映像完成，
 \lstinline{kexec}
-can commit to the new page table
+就可以提交到新页表
 \lineref{kernel/exec.c:/pagetable.=.pagetable/}
-and free the old one
-\lineref{kernel/exec.c:/proc_freepagetable/}.
+并释放旧页表
+\lineref{kernel/exec.c:/proc_freepagetable/}。
 
-The \lstinline{exec} system call
-loads bytes from the ELF file into memory at addresses specified by the ELF file.
-Users or processes can place whatever addresses they want into an ELF file.
-Thus
 \lstinline{exec}
-is risky, because the addresses in the ELF file may refer to the kernel, accidentally
-or on purpose. The consequences for an unwary kernel could range from
-a crash to a malicious subversion of the kernel's isolation mechanisms
-(i.e., a security exploit).
-Xv6 performs a number of checks to avoid these risks.
-For example
+系统调用将字节从 ELF 文件加载到 ELF 文件指定的内存地址。用户或进程可以在 ELF 文件中放置他们想要的任何地址。因此
+\lstinline{exec}
+是有风险的，因为 ELF 文件中的地址可能意外或故意引用内核。对粗心的内核的后果可能从崩溃到恶意颠覆内核的隔离机制（即安全漏洞）。Xv6 执行许多检查以避免这些风险。例如
 \lstinline{if(ph.vaddr + ph.memsz < ph.vaddr)}
-checks for whether the sum overflows a 64-bit integer.
-The danger is that a user could construct an ELF binary with a
+检查总和是否溢出 64 位整数。危险是用户可以构造一个 ELF 二进制文件，其
 \lstinline{ph.vaddr}
-that points to a user-chosen address,
-and
+指向用户选择的地址，并且
 \lstinline{ph.memsz}
-large enough that the sum overflows to 0x1000, which will look like a
-valid value. In an older version of xv6 in which the user address
-space also contained the kernel (but not readable/writable in user
-mode), the user could choose an address that corresponded to kernel
-memory and would thus copy data from the ELF binary into the kernel.
-In the RISC-V version of xv6 this cannot happen, because the kernel has
-its own separate page table;
+足够大，使总和溢出到 0x1000，这将看起来像一个有效值。在 xv6 的旧版本中，用户地址空间也包含内核（但在用户模式下不可读/写），用户可以选择对应于内核内存的地址，从而将数据从 ELF 二进制文件复制到内核中。在 RISC-V 版本的 xv6 中，这不可能发生，因为内核有自己的独立页表；
 \lstinline{loadseg}
-loads into the process's page table, not in the kernel's page table.
+加载到进程的页表中，而不是内核的页表中。
 
-It is easy for a kernel developer to omit a crucial check, and
-real-world kernels have a long history of missing checks whose absence
-can be exploited by user programs to obtain kernel privileges.  It is likely that xv6 doesn't do a complete job of validating
-user-level data supplied to the kernel, which a malicious user program might be able to exploit to circumvent xv6's isolation.
-%% 
-\section{Real world}
-%% 
+内核开发人员很容易省略关键检查，现实世界的内核长期缺少可以被用户程序利用来获取内核权限的检查。xv6 可能未完全验证提供给内核的用户级数据，恶意用户程序可能利用这一点来绕过 xv6 的隔离。
+%%
+\section{现实世界}
+%%
 
-Like most operating systems, xv6 uses the paging hardware for memory
-protection and mapping.  Most operating systems make far more
-sophisticated use of paging than xv6 by combining paging and
-page-fault exceptions, which we will discuss in
-Chapter~\ref{CH:TRAP}.
+与大多数操作系统一样，xv6 使用分页硬件进行内存保护和映射。大多数操作系统通过结合分页和页错误异常来更复杂地使用分页，我们将在 Chapter~\ref{CH:TRAP} 中讨论。
 
-Xv6 is simplified by the kernel's use of a direct map between virtual
-and physical addresses, and by its assumption that there is physical
-RAM at address 0x80000000, where the kernel expects to be loaded. This
-works with QEMU, but on real hardware it turns out to be a bad idea;
-real hardware places RAM and devices at unpredictable physical
-addresses, so that (for example) there might be no RAM at 0x80000000,
-where xv6 expect to be able to store the kernel. More serious kernel
-designs exploit the page table to turn arbitrary hardware physical
-memory layouts into predictable kernel virtual address layouts.
+Xv6 因内核使用虚拟地址和物理地址之间的直接映射以及假设物理 RAM 位于地址 0x80000000（内核期望加载的位置）而简化。这适用于 QEMU，但在真实硬件上效果不佳；真实硬件将 RAM 和设备放置在不可预测的物理地址，因此（例如）0x80000000 处可能没有 RAM，而 xv6 期望能够在该处存储内核。更严肃的内核设计利用页表将任意的硬件物理内存布局转换为可预测的内核虚拟地址布局。
 
-RISC-V supports protection at the level of physical addresses,
-but xv6 doesn't use that feature.
+RISC-V 支持物理地址级别的保护，但 xv6 不使用该功能。
 
-On machines with lots of memory
-it might make sense to use
-RISC-V's support for ``super pages.''
-Small pages make sense
-when physical memory is small, to allow allocation and page-out to disk
-with fine granularity.
-For example, if a program
-uses only 8 kilobytes of memory, giving it a whole 4-megabyte super-page
-of physical memory is wasteful.
-Larger pages make sense on machines with lots of RAM,
-and may reduce overhead for page-table manipulation.
+在内存较多的机器上，使用 RISC-V 对``超级页''的支持可能是有意义的。小页面在物理内存较小时有意义，以允许以细粒度分配和换出到磁盘。例如，如果程序仅使用 8 KB 内存，为其分配整个 4 MB 的超级物理内存页是浪费的。较大的页面在 RAM 较多的机器上有意义，并可能减少页表操作的开销。
 
-To avoid having to flush the complete TLB when
-changing page tables, RISC-V CPUs may support address
-space identifiers (ASIDs)~\cite{riscv:priv}.  The kernel can then
-flush just the TLB entries for a particular address space. Xv6
-does not use this feature.
+为了避免在更改页表时必须刷新整个 TLB，RISC-V CPU 可能支持地址空间标识符（ASIDs）~\cite{riscv:priv}。然后内核可以只刷新特定地址空间的 TLB 条目。Xv6 不使用此功能。
 
-The xv6 kernel's lack of a {\tt malloc}-like allocator that can
-provide memory for small objects prevents the kernel from using
-sophisticated data structures that would require dynamic allocation.
-A more elaborate kernel
-would likely allocate many different sizes of small blocks,
-rather than (as in xv6) just 4096-byte blocks;
-a real kernel
-allocator would need to handle small allocations as well as large
-ones.
+xv6 内核缺乏类似 {\tt malloc} 的分配器来为小对象提供内存，这阻止了内核使用需要动态分配的复杂数据结构。更复杂的内核可能会分配许多不同大小的小块，而不是（如 xv6）仅 4096 字节块；真正的内核分配器需要处理小分配和大分配。
 
-Memory allocation is a perennial hot topic, the basic problems being
-efficient use of limited memory and
-preparing for unknown future requests~\cite{knuth}.  Today people care more about speed than
-space efficiency.
-%% 
-\section{Exercises}
-%% 
+内存分配是一个永恒的热门话题，基本问题是有效使用有限内存和为未知的未来请求做准备~\cite{knuth}。今天人们更关心速度而不是空间效率。
+%%
+\section{练习}
+%%
 
 \begin{enumerate}
-  
-\item Parse RISC-V's device tree to find the amount of physical memory
-the computer has.
 
-\item The functions {\tt copyin} and {\tt copyinstr} walk the user
-  page table in software.  Set up the kernel page table so that the
-  kernel has the user program mapped, and {\tt copyin} and {\tt
-    copyinstr} can use {\tt memcpy} to copy system call arguments into
-  kernel space, relying on the hardware to do the page table walk.
+\item 解析 RISC-V 的设备树以查找计算机拥有的物理内存量。
 
-\item Modify xv6 to use super pages for the kernel.
+\item 函数 {\tt copyin} 和 {\tt copyinstr} 在软件中遍历用户页表。设置内核页表，使内核映射了用户程序，并且 {\tt copyin} 和 {\tt copyinstr} 可以使用 {\tt memcpy} 将系统调用参数复制到内核空间，依靠硬件进行页表遍历。
 
-\item Unix implementations of
+\item 修改 xv6 以在内核中使用超级页。
+
+\item Unix 的
 \lstinline{exec}
-traditionally include special handling for shell scripts.
-If the file to execute begins with the text
-\lstinline{#!},
-then the first line is taken to be a program
-to run to interpret the file.
-For example, if
+实现对 shell 脚本有特殊处理。如果要执行的文件以文本
+\lstinline{#!}
+开头，则第一行被视为运行来解释文件的程序。例如，如果
 \lstinline{exec}
-is called to run
+被调用以运行
 \lstinline{myprog}
 \lstinline{arg1}
-and
-\lstinline{myprog} 's
-first line is
-\lstinline{#!/interp},
-then
+并且
+\lstinline{myprog}
+的第一行是
+\lstinline{#!/interp}，
+则
 \lstinline{exec}
-runs
+运行
 \lstinline{/interp}
-with command line
+，命令行为
 \lstinline{/interp}
 \lstinline{myprog}
-\lstinline{arg1}.
-Implement support for this convention in xv6.
+\lstinline{arg1}。
+在 xv6 中实现对此约定的支持。
 
-\item Implement address space layout randomization for the kernel.
+\item 为内核实现地址空间布局随机化。
 
 \end{enumerate}
