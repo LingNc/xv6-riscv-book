@@ -430,7 +430,7 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 | acks.tex | 待翻译 | - | 39 | 低 |
 | unix.tex | ✅ 已完成 | Translator | 1116 | 高-历史叙述长 |
 | first.tex | ✅ 已完成 | Translator | 701 | 中-专业术语密集 |
-| mem.tex | 待翻译 | - | 924 | 高-内存概念复杂 |
+| mem.tex | ✅ 已完成 | Translator | 924 | 高-内存概念复杂 |
 | trap.tex | 待翻译 | - | 512 | 高-CPU细节多 |
 | pgfault.tex | 待翻译 | - | 296 | 中-页故障逻辑 |
 | interrupt.tex | 待翻译 | - | 305 | 中-硬件相关 |
