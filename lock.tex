@@ -1,57 +1,19 @@
-\chapter{Locking}
+\chapter{锁}
 \label{CH:LOCK}
 
-Most kernels, including xv6, interleave the execution
-of multiple activities.
-One source of interleaving is multiprocessor hardware:
-computers with
-multiple CPUs executing independently, such as xv6's RISC-V.
-These multiple CPUs share physical RAM,
-and xv6 exploits the sharing to maintain kernel
-data structures that all CPUs read and write.
-This sharing raises the possibility of
-one CPU reading a data structure while another
-CPU is mid-way through updating it, or even
-multiple CPUs updating the same data simultaneously;
-without careful design such parallel access is likely
-to yield incorrect results or a broken data structure.
-Even on a uniprocessor, the kernel may switch the CPU among
-a number of threads, causing their execution to be interleaved.
-Finally, a device interrupt handler that modifies
-the same data as some interruptible code could damage
-the data if the interrupt occurs at just the wrong time.
-The word 
-\indextext{concurrency}
-refers to situations in which
-multiple instruction streams are interleaved,
-due to multiprocessor parallelism,
-thread switching, or interrupts.
+大多数内核，包括 xv6，都交错执行多个活动。交错的一个来源是多处理器硬件：具有多个独立执行的 CPU 的计算机，例如 xv6 的 RISC-V。这些多个 CPU 共享物理 RAM，xv6 利用这种共享来维护所有 CPU 读写内核数据结构。这种共享带来了一种可能性：一个 CPU 正在读取数据结构，而另一个 CPU 正在更新它的中途，甚至多个 CPU 同时更新同一数据；如果没有精心设计，这种并行访问可能会产生不正确的结果或破坏的数据结构。即使在单处理器上，内核也可能在多个线程之间切换 CPU，导致它们的执行被交错。最后，修改与某些可中断代码相同数据的设备中断处理程序，如果中断发生在恰好的错误时间，可能会损坏数据。
+\indextext{并发}
+指的是由于多处理器并行、线程切换或中断而导致多条指令流交错的情况。
 
-Kernels are full of concurrently-accessed data. For example, two CPUs
-could simultaneously call {\tt kalloc}, thereby concurrently
-popping from the head of the free list. Kernel designers like to allow
-for lots of concurrency, since it can yield increased performance
-through parallelism, and increased responsiveness. However, as a result
-kernel designers must convince themselves of
-correctness despite such concurrency. There are many ways to arrive at
-correct code, some easier to reason about than others. Strategies
-aimed at correctness under concurrency, and abstractions that support
-them, are called \indextext{concurrency control} techniques.
+内核充满了并发访问的数据。例如，两个 CPU 可以同时调用 {\tt kalloc}，从而并发地从空闲列表头部弹出。内核设计者喜欢允许大量并发，因为它可以通过并行性提高性能，并提高响应性。然而，因此内核设计者必须在尽管存在这种并发的情况下说服自己代码的正确性。有许多方法可以实现正确的代码，有些比其他更容易推理。旨在实现并发下正确性的策略和支持它们的抽象被称为
+\indextext{并发控制}
+技术。
 
-Xv6 uses a number of concurrency control techniques, depending on the
-situation; many more are possible. This chapter focuses on a widely
-used technique: the \indextext{lock}.  A lock provides mutual
-exclusion, ensuring that only one CPU at a time can hold the lock. If
-the programmer associates a lock with each shared data item, and the
-code always holds the associated lock when using an item, then the
-item will be used by only one CPU at a time.  In this situation, we
-say that the lock protects the data item.  Although locks are an
-easy-to-understand concurrency control mechanism, the downside of
-locks is that they can limit performance, because they serialize
-concurrent operations.
+Xv6 根据情况使用多种并发控制技术；还有更多可能的。本章专注于一种广泛使用的技术：
+\indextext{锁}。
+锁提供互斥，确保一次只有一个 CPU 可以持有锁。如果程序员将锁与每个共享数据项关联，并且代码在使用项目时始终持有关联的锁，那么一次只有一个 CPU 会使用该项目。在这种情况下，我们说锁保护数据项。虽然锁是一种易于理解的并发控制机制，但锁的缺点是它们可能限制性能，因为它们串行化并发操作。
 
-The rest of this chapter explains why xv6 needs locks, how xv6
-implements them, and how it uses them.
+本章的其余部分解释 xv6 为什么需要锁、xv6 如何实现它们以及如何使用它们。
 
 
 % The following is most relevant to lock-free code:
@@ -69,35 +31,22 @@ implements them, and how it uses them.
 % Concurrency makes reasoning about correctness difficult.
 
 %% 
-\section{Races}
+\section{竞态}
 %% 
 
 \begin{figure}[t]
 \center
 \includegraphics[scale=0.8]{fig/smp.pdf}
-\caption{Simplified SMP architecture}
+\caption{简化的 SMP 架构}
 \label{fig:smp}
 \end{figure}
 
-As an example of why we need locks, consider two processes
-with exited children calling
-the {\tt wait} system call on two different
-CPUs.  {\tt wait} frees the child's memory.
-Thus
-on each CPU, the kernel will call {\tt kfree}
-to free the children's memory pages.  The kernel allocator maintains a linked
-list of free pages: \lstinline{kalloc()} \lineref{kernel/kalloc.c:/^kalloc/} pops a
-page of memory from the list, and \lstinline{kfree()}
-\lineref{kernel/kalloc.c:/^kfree/} pushes a page onto the list.
-For best performance, we might hope that the {\tt kfree}s of the two parent processes
-would execute in parallel without either having to wait for the other,
-but this would not be correct given xv6's {\tt kfree} implementation.
+作为我们需要锁的一个例子，考虑两个具有已退出子进程的进程在两个不同的 CPU 上调用
+{\tt wait} 系统调用。{\tt wait} 释放子进程的内存。因此在每个 CPU 上，内核将调用 {\tt kfree}
+来释放子进程的内存页。内核分配器维护一个空闲页面的链表：\lstinline{kalloc()} \lineref{kernel/kalloc.c:/^kalloc/} 从列表中弹出一页内存，\lstinline{kfree()}
+\lineref{kernel/kalloc.c:/^kfree/} 将一页压入列表。为了获得最佳性能，我们可能希望两个父进程的 {\tt kfree} 并行执行，而无需等待对方，但鉴于 xv6 的 {\tt kfree} 实现，这是不正确的。
 
-Figure~\ref{fig:smp} illustrates the setting in more detail: the
-linked list of free pages is in memory that is shared by the two CPUs, which
-manipulate the list using load and store instructions.  (In
-reality, the processors have caches, but conceptually 
-multiprocessor systems behave as if there were a single, shared memory.)
+Figure~\ref{fig:smp} 更详细地说明了设置：空闲页面链表位于两个 CPU 共享的内存中，两个 CPU 使用加载和存储指令操作列表。（实际上，处理器有缓存，但概念上多处理器系统表现得好像有单个共享内存。）
 If there were no concurrent
 requests, you might implement a list \lstinline{push} operation as
 follows:
@@ -148,33 +97,17 @@ the second one will overwrite the first;
 the element involved in the first assignment
 will be lost.
 
-The lost update at line~\ref{line:list} is an example of a
-\indextext{race}.
-A race is a situation in which a memory location is accessed
-concurrently, and at least one access is a write.
-A race is often a sign of a bug, either a lost update
-(if the accesses are writes) or a read of
-an incompletely-updated data structure.
-The outcome of a race depends on
-the machine code generated by the compiler,
-the timing of the two CPUs involved,
-and how their memory operations are ordered by the memory system,
-which can make race-induced errors difficult to reproduce
-and debug.
-For example, adding print statements while debugging
+第 \ref{line:list} 行的丢失更新是
+\indextext{竞态}
+的一个例子。竞态是一种内存位置被并发访问的情况，且至少一次访问是写入。竞态通常是错误的迹象，要么是丢失更新（如果访问是写入），要么是读取不完全更新的数据结构。竞态的结果取决于编译器生成的机器代码、两个涉及的 CPU 的时序，以及它们的内存操作被内存系统排序的方式，这可能使竞态引起的错误难以重现和调试。例如，在调试
 \lstinline{push}
-might change the timing of the execution enough
-to make the race disappear.
+时添加打印语句可能会改变执行的时序，足以使竞态消失。
 
-The usual way to avoid races is to use a lock.
-Locks ensure
-\indextext{mutual exclusion},
-so that only one CPU at a time can execute 
-the sensitive lines of
-\lstinline{push};
-this makes the scenario above impossible.
-The correctly locked version of the above code
-adds just a few lines (highlighted in yellow):
+避免竞态的常用方法是使用锁。锁确保
+\indextext{互斥}，
+以便一次只有一个 CPU 可以执行
+\lstinline{push}
+的敏感代码行；这使上述情况不可能发生。上述代码的正确加锁版本只添加了几行（以黄色高亮显示）：
 \begin{lstlisting}[numbers=left,firstnumber=6]
    struct element *list = 0;
    (*@\hl{struct lock listlock;}@*)
@@ -192,60 +125,32 @@ adds just a few lines (highlighted in yellow):
      (*@\hl{release(\&listlock)}; @*)
    }
 \end{lstlisting}
-The sequence of instructions between
 \lstinline{acquire}
-and
+和
 \lstinline{release}
-is often called a
-\indextext{critical section}.
-The lock is said to be protecting
-\lstinline{list}.
+之间的指令序列通常被称为
+\indextext{临界区}。
+锁被认为是在保护
+\lstinline{list}。
 
-When we say that a lock protects data, we really mean
-that the lock protects some collection of invariants
-that apply to the data.
-Invariants are properties of data structures that
-are maintained across operations.
-Typically, an operation's correct behavior depends
-on the invariants being true when the operation
-begins.  The operation may temporarily violate
-the invariants but must reestablish them before
-finishing.
-For example, in the linked list case, the invariant is that
+当我们说锁保护数据时，我们真正的意思是锁保护适用于数据的一组不变量。不变量是跨操作维护的数据结构的属性。通常，操作的正确行为取决于操作开始时不变量为真。操作可能暂时违反不变量，但必须在完成之前重新建立它们。例如，在链表情况下，不变量是
 \lstinline{list}
-points at the first element in the list
-and that each element's
+指向列表中的第一个元素，且每个元素的
 \lstinline{next}
-field points at the next element.
-The implementation of
+字段指向下一个元素。
 \lstinline{push}
-violates this invariant temporarily: in line~\ref{line:next1},
+的实现暂时违反此不变量：在第 \ref{line:next1} 行，
 \lstinline{l}
-points
-to the next list element, but
+指向
+列表的下一个元素，但
 \lstinline{list}
-does not point at
+尚未指向
 \lstinline{l}
-yet (reestablished at line~\ref{line:list1}).
-The race we examined above
-happened because a second CPU executed
-code that depended on the list invariants
-while they were (temporarily) violated.
-Proper use of a lock ensures that only one CPU at a time
-can operate on the data structure in the critical section, so that
-no CPU will execute a data structure operation when the 
-data structure's invariants do not hold.
+（在第 \ref{line:list1} 行重新建立）。我们上面检查的竞态发生是因为第二个 CPU 执行了依赖于列表不变量的代码，而它们被（暂时）违反了。正确使用锁确保一次只有一个 CPU 可以在临界区操作数据结构，因此没有 CPU 会在数据结构不变量不成立时执行数据结构操作。
 
-You can think of a lock as
-\indextext{serializing}
-concurrent critical sections so that they run one at a time,
-and thus preserve invariants (assuming the critical sections
-are correct in isolation).
-You can also think of critical sections guarded by the same lock as being
-atomic with respect to each other,
-so that each sees only the complete set of
-changes from earlier critical sections, and never sees
-partially-completed updates.
+你可以将锁视为
+\indextext{串行化}
+并发临界区，使它们一次运行一个，从而保留不变量（假设临界区在隔离情况下是正确的）。你也可以将由相同锁保护的临界区视为彼此原子的，以便每个只看到来自早期临界区的完整更改集，而永远不会看到部分完成的更新。
 
 Though useful for correctness, locks inherently
 limit performance.  For example, if two processes call {\tt kfree}
@@ -279,21 +184,17 @@ and
 \lstinline{release}
 invocations.
 %% 
-\section{Code: Locks}
+\section{代码：锁}
 %% 
 
-Please read {\tt kernel/spinlock.h} and {\tt kernel/spinlock.c}.
+请阅读 {\tt kernel/spinlock.h} 和 {\tt kernel/spinlock.c}。
 
-Xv6 has two types of locks: spinlocks and sleep-locks.
-We'll start with spinlocks.
-Xv6 represents a spinlock as a
+Xv6 有两种类型的锁：自旋锁和睡眠锁。我们从自旋锁开始。Xv6 将自旋锁表示为
 \indexcode{struct spinlock}
-\lineref{kernel/spinlock.h:/struct.spinlock/}.
-The important field in the structure is
-\lstinline{locked},
-a word that is zero when the lock is available
-and non-zero when it is held.
-Logically, xv6 should acquire a lock by executing code like
+\lineref{kernel/spinlock.h:/struct.spinlock/}。
+结构中的重要字段是
+\lstinline{locked}，
+当锁可用时该字段为零，当锁被持有时为非零。从逻辑上讲，xv6 应该通过执行如下代码获取锁：
 \begin{lstlisting}[numbers=left,firstnumber=21]
    void
    acquire(struct spinlock *lk) // does not work!
@@ -306,168 +207,165 @@ Logically, xv6 should acquire a lock by executing code like
      }
    }
 \end{lstlisting}
-Unfortunately, this implementation does not
-guarantee mutual exclusion on a multiprocessor.
-It could happen that two CPUs simultaneously
-reach line~\ref{line:testlocked}, see that 
+不幸的是，这种实现不能
+保证多处理器上的互斥。
+可能发生两个 CPU 同时
+到达第 \ref{line:testlocked} 行，看到
 \lstinline{lk->locked}
-is zero, and then both grab the lock by executing line~\ref{line:assign}.
-At this point, two different CPUs hold the lock,
-which violates the mutual exclusion property.
-What we need is a way to
-make lines \ref{line:testlocked} and \ref{line:assign} execute as an
-\indextext{atomic}
-(i.e., indivisible) step.
+为零，然后都通过执行第 \ref{line:assign} 行获取锁。
+此时，两个不同的 CPU 持有锁，
+这违反了互斥属性。
+我们需要一种方法来
+使第 \ref{line:testlocked} 和 \ref{line:assign} 行作为一个
+\indextext{原子}
+（即不可分割的）步骤执行。
 
-Because locks are widely used,
-multi-core processors usually provide an instruction that
-can be used to make
-lines~\ref{line:testlocked} and \ref{line:assign}
-atomic.
-On the RISC-V this instruction is
-\lstinline{amoswap r, a}.
+因为锁被广泛使用，
+多核处理器通常提供一条指令，
+可用于使
+第 \ref{line:testlocked} 和 \ref{line:assign} 行
+原子化。
+在 RISC-V 上，这条指令是
+\lstinline{amoswap r, a}。
 \lstinline{amoswap}
-reads the value at the memory address {\tt a},
-writes the contents of register {\tt r} to that address,
-and puts the value it read into {\tt r}.
-That is, it swaps the contents of the register and the addressed
-memory location.
-It performs this sequence atomically, using special
-hardware to prevent any
-other CPU from using the memory address between the read and the write.
+读取内存地址 {\tt a} 处的值，
+将寄存器 {\tt r} 的内容写入该地址，
+并将其读取的值放入 {\tt r}。
+也就是说，它交换寄存器和被寻址
+内存位置的内容。
+它使用特殊
+硬件原子地执行此序列，以防止任何
+其他 CPU 在读取和写入之间使用该内存地址。
 
-The portable C library call 
+可移植的 C 库调用
 \lstinline{__sync_lock_test_and_set(addr, value)}
-boils down to the
+归结为
 \lstinline{amoswap}
-instruction;
-the function returns the old (swapped) contents of {\tt *addr}.
-Here's a good way to write the loop in {\tt acquire}:
+指令；
+该函数返回 {\tt *addr} 的旧（交换的）内容。
+这是在 {\tt acquire} 中编写循环的好方法：
 
 \begin{lstlisting}[numbers=left,firstnumber=21]
   while(__sync_lock_test_and_set(&lk->locked, 1) != 0)
     ;
 \end{lstlisting}
 
-Xv6's 
+Xv6 的
 \indexcode{acquire}
 \lineref{kernel/spinlock.c:/^acquire/}
-uses the above loop.
-Each iteration swaps one into
-\lstinline{lk->locked} 
-and checks the previous value;
-if the previous value is zero, then we've acquired the
-lock, and the swap will have set 
+使用上述循环。
+每次迭代将 1 交换到
 \lstinline{lk->locked}
-to one.
-If the previous value is one, then some other CPU
-holds the lock, and the fact that we atomically swapped one into
+并检查先前的值；
+如果先前的值为零，则我们已获取
+锁，交换将设置
 \lstinline{lk->locked}
-didn't change its value.
+为 1。
+如果先前的值为 1，则其他某个 CPU
+持有锁，我们将 1 原子地交换到
+\lstinline{lk->locked}
+的事实不会改变其值。
 
-Once the lock is acquired,
+一旦获取锁，
 \lstinline{acquire}
-records, for debugging, the CPU 
-that acquired the lock.
-The
+记录获取锁的 CPU
+以供调试。
 \lstinline{lk->cpu}
-field is protected by the lock
-and must only be changed while holding the lock.
+字段受锁保护
+且只能在持有锁时更改。
 
-The function
+函数
 \indexcode{release}
 \lineref{kernel/spinlock.c:/^release/}
-is the opposite of 
-\lstinline{acquire}:
-it clears the 
+与
+\lstinline{acquire}
+相反：
+它清除
 \lstinline{lk->cpu}
-field
-and then releases the lock.
-Conceptually, the release just requires assigning zero to
-\lstinline{lk->locked}.
-The C standard allows compilers to implement an assignment
-with multiple store instructions,
-so a C assignment might be non-atomic with respect
-to concurrent code.
+字段
+然后释放锁。
+从概念上讲，释放只需要将零赋给
+\lstinline{lk->locked}。
+C 标准允许编译器用多个存储指令实现赋值，
+因此 C 赋值可能相对于
+并发代码是非原子的。
 Instead,
 \lstinline{release}
 uses the C library function
 \lstinline{__sync_lock_release}
 that performs an atomic assignment.
-This function also boils down to a RISC-V
+该函数也归结为 RISC-V
 \lstinline{amoswap}
-instruction.
+指令。
 %% 
-\section{Code: Using locks}
+\section{代码：使用锁}
 %% 
-Xv6 uses locks in many places to avoid races.
-As described above,
+Xv6 在许多地方使用锁来避免竞态。
+如上所述，
 \lstinline{kalloc}
 \lineref{kernel/kalloc.c:/^kalloc/}
-and
+和
 \lstinline{kfree}
 \lineref{kernel/kalloc.c:/^kfree/}
-form a good example.
-Try Exercises 1 and 2 to see what happens if those
-functions omit the locks.
-You'll likely find that it's difficult to trigger incorrect
-behavior, suggesting that it's hard to reliably test whether code
-is free from locking errors and races.
-Xv6 may well have as-yet-undiscovered races.
+是一个很好的例子。
+尝试练习 1 和 2 看看如果这些
+函数省略锁会发生什么。
+你可能会发现很难触发不正确的
+行为，这表明很难可靠地测试代码
+是否没有锁错误和竞态。
+Xv6 可能还有尚未发现的竞态。
 
-A hard part about using locks is deciding how many locks
-to use and which data and invariants each lock should protect.
-There are a few basic principles.
-First, any time a variable can be written by one CPU
-at the same time that another CPU can read or write it,
-a lock should be used to keep the two
-operations from overlapping.
-Second, remember that locks protect invariants:
-if an invariant involves multiple memory locations,
-typically all of them need to be protected
-by a single lock to ensure the invariant is maintained.
+使用锁的一个难点是决定使用多少锁以及每个锁应该保护哪些数据和不变量。
+有一些基本原则。
+首先，任何时候一个 CPU 写入变量
+而另一个 CPU 同时读取或写入它，
+应该使用锁来防止两个
+操作重叠。
+其次，记住锁保护不变量：
+如果不变量涉及多个内存位置，
+通常它们都需要被单个锁保护
+以确保不变量被维护。
 
-The rules above say when locks are necessary but say nothing about when locks
-are unnecessary, and it is important for efficiency not to lock too much,
-because locks reduce parallelism.  If parallelism isn't important, then one
-could arrange to have only a single thread and not worry about locks.  A simple
-kernel can do this on a multiprocessor by having a single lock;
-the kernel acquires the lock every time the kernel is entered
-from user space, for a system call or interrupt;
-the kernel releases the lock when it returns to user space.
-Many uniprocessor operating systems have been converted to
-run on multiprocessors using this approach, sometimes called a ``big
-kernel lock,'' but the approach sacrifices parallelism: only one
-CPU can execute in the kernel at a time.  If the kernel consumes
-significant CPU time, more parallelism could be obtained by
-protecting different objects or modules with different locks,
-so that different CPUs could be
-executing in different parts of the kernel at the same time.
+上面的规则说明了何时需要锁，但没有说明何时不需要锁，为了效率不过度加锁很重要，
+因为锁减少并行性。
+如果并行性不重要，那么可以
+安排只有一个线程而不用担心锁。
+一个简单的内核可以通过拥有一个锁来在多处理器上做到这一点；
+内核每次从用户空间进入内核时获取锁，
+用于系统调用或中断；
+内核在返回用户空间时释放锁。
+许多单处理器操作系统已被转换以
+使用这种方法在多处理器上运行，有时称为``大
+内核锁''，但这种方法牺牲了并行性：一次只有一个
+CPU 可以在内核中执行。
+如果内核消耗
+大量 CPU 时间，可以通过用不同的锁保护不同的对象或模块来获得更多并行性，
+以便不同的 CPU 可以同时
+在内核的不同部分执行。
 
-As an example of coarse-grained locking, xv6's \lstinline{kalloc.c}
-allocator has a single free list protected by a single lock. If
-multiple processes on different CPUs try to allocate pages at the same
-time, each will have to wait for its turn by spinning in {\tt
-  acquire}. Spinning wastes CPU time, since it's not useful work.
-If contention for the lock wasted a significant fraction of CPU time,
-perhaps performance could be improved by changing the allocator 
-to have a separate free list per CPU, each with its own lock, to allow truly
-parallel allocation.
+作为粗粒度锁的一个例子，xv6 的 \lstinline{kalloc.c}
+分配器有一个由单个锁保护的单个空闲列表。如果
+不同 CPU 上的多个进程同时尝试分配页面，
+每个都必须在 {\tt acquire} 中自旋等待轮次。
+自旋浪费 CPU 时间，因为这不是有用的工作。
+如果锁争用浪费了很大比例的 CPU 时间，
+也许可以通过修改分配器
+为每个 CPU 提供单独的空闲列表，每个列表有自己的锁，以允许真正
+并行的分配来提高性能。
 
-As an example of fine-grained locking, xv6 has a separate lock for
-each file, so that processes that manipulate different files can often
-proceed without waiting for each other's locks. The file locking
-scheme could be made even more fine-grained if one wanted to allow
-processes to simultaneously write different areas of the same file.
-Ultimately lock granularity decisions need to be driven by performance
-measurements as well as complexity considerations.
+作为细粒度锁的一个例子，xv6 为每个文件有一个单独的锁，以便操作不同文件的进程通常可以
+继续而不必等待对方的锁。如果希望允许
+进程同时写入同一文件的不同区域，文件锁定
+方案可以做得更细粒度。
+最终锁粒度决策需要由性能
+测量以及复杂性考虑来驱动。
 
-As subsequent chapters explain each part of xv6, they
-will mention examples of xv6's use of locks
-to deal with concurrency.
-As a preview,
+随着后续章节解释 xv6 的每个部分，它们
+会提到 xv6 使用锁
+处理并发的例子。
+作为预览，
 Figure~\ref{fig:locktable}
-lists all of the locks in xv6.
+列出了 xv6 中的所有锁。
 
 \begin{figure}[t]
 \center
@@ -490,108 +388,47 @@ tickslock & Serializes operations on the ticks counter \\
 inode's ip->lock & Serializes operations on each inode and its content \\
 buf's b->lock & Serializes operations on each block buffer \\
 \end{tabular}
-\caption{Locks in xv6}
+\caption{xv6 中的锁}
 \label{fig:locktable}
 \end{figure}
 
 %% 
 \newpage
-\section{Deadlock and lock ordering}
+\section{死锁和锁排序}
 %% 
 
-Suppose the functions running on CPUs C1 and C2 both have a point at
-which each needs to hold both lock A and lock B, and they acquire them
-in different orders:
+假设在 CPU C1 和 C2 上运行的函数都有一个点，每个都需要持有锁 A 和锁 B，并且它们以不同的顺序获取它们：
 
 \begin{center}
   \input{fig/order.tex}
 \end{center}
 
-With a bit of bad luck, C1 and C2 might both execute their first
-acquire at exactly the same moment; both can succeed, since they are
-asking for different locks. But then both C1 and C2 will have to wait
-in their second calls to {\tt acquire()}, since both locks are already
-held by the other CPU. Because both CPUs are waiting for each
-other, neither will ever release a lock, and both will wait forever.
-This situation is called \indextext{deadlock}.
+运气不好的话，C1 和 C2 可能都在完全相同的时刻执行它们的第一次获取；两者都可能成功，因为它们要求的是不同的锁。但然后 C1 和 C2 都必须在它们对 {\tt acquire()} 的第二次调用中等待，因为两个锁都已被另一个 CPU 持有。因为两个 CPU 都在等待对方，所以谁都不会释放锁，两者都将永远等待。这种情况被称为
+\indextext{死锁}。
 
-The key problem in the C1/C2 example is that the two CPUs acquired
-the locks in different orders. If they had both tried to acquire A
-first, one would have acquired A and then B and then released them both,
-and then the other CPU could have proceeded. More generally,
-locking code must follow this rule to avoid deadlock: all code paths
-that hold multiple locks must acquire locks in the same order. The
-need for this global lock acquisition order means that locks are
-effectively part of each function's specification: callers must invoke
-functions in a way that causes locks to be acquired in the agreed-on
-order.
+C1/C2 示例中的关键问题是两个 CPU 以不同的顺序获取锁。如果它们都先尝试获取 A，一个会先获取 A 然后 B 然后释放它们，然后另一个 CPU 可以继续。更一般地说，锁代码必须遵循以下规则以避免死锁：所有持有多个锁的代码路径必须以相同的顺序获取锁。这种全局锁获取顺序的需要意味着锁实际上是每个函数规范的一部分：调用者必须以导致锁按约定顺序获取的方式调用函数。
 
-Xv6 has many lock-order chains of length two involving
-per-process locks
-(the lock in each
-\lstinline{struct proc})
-due to the way that
+Xv6 有许多长度为二的锁顺序链，涉及每个进程的锁（每个
+\lstinline{struct proc}
+中的锁）由于
 \lstinline{sleep}
-works (see Chapter~\ref{CH:SLEEP}).
-For example,
+的工作方式（参见 Chapter~\ref{CH:SLEEP}）。例如，
 \lstinline{consoleintr}
 \lineref{kernel/console.c:/^consoleintr/}
-is the interrupt routine which handles typed characters.
-When a newline arrives, any process that is waiting for
-console input should be woken up.
-To do this,
+是处理输入字符的中断例程。当新行到达时，任何等待控制台输入的进程都应该被唤醒。为此，
 \lstinline{consoleintr}
-holds
+持有
 \lstinline{cons.lock}
-while calling 
-\indexcode{wakeup},
-which acquires 
-the waiting process's lock in order to wake it up.
-In consequence, the global deadlock-avoiding
-lock order includes the rule that
+同时调用
+\indexcode{wakeup}，后者获取等待进程的锁以唤醒它。因此，全局避免死锁的锁顺序包括规则
 \lstinline{cons.lock}
-must be acquired before any process lock.
-The file-system code contains xv6's longest lock chains.
-For example, creating a file requires simultaneously
-holding a lock on the directory, a lock on the new file's inode,
-a lock on a disk block buffer, 
-the disk driver's \lstinline{vdisk_lock},
-and
-the calling process's \lstinline{p->lock}.
-To avoid deadlock, file-system code always acquires locks in the order
-mentioned in the previous sentence.
+必须在任何进程锁之前获取。文件系统代码包含 xv6 最长的锁链。例如，创建文件需要同时持有目录上的锁、新文件 inode 上的锁、磁盘块缓冲区上的锁、磁盘驱动程序的 \lstinline{vdisk_lock} 以及调用进程的 \lstinline{p->lock}。为了避免死锁，文件系统代码始终按上一句提到的顺序获取锁。
 
-Honoring a global deadlock-avoiding order can be surprisingly
-difficult. Sometimes the lock order conflicts with logical program
-structure, e.g., perhaps code module M1 calls module M2, but the lock
-order requires that a lock in M2 be acquired before a lock in M1.
-Sometimes the identities of locks aren't known in advance, perhaps
-because one lock must be held in order to discover the identity
-of the lock to be acquired next. This kind of situation arises in the
-file system as it looks up successive components in a path name, and
-in the code for the {\tt wait} and {\tt exit} system calls
-as they search the table of
-processes looking for child processes. Finally, the danger of deadlock
-is often a constraint on how fine-grained one can make a locking
-scheme, since more locks often means more opportunity for deadlock.
-The need to avoid deadlock is often a major factor in kernel
-implementation.
+遵守全局避免死锁的顺序可能出人意料地困难。有时锁顺序与逻辑程序结构冲突，例如，也许代码模块 M1 调用模块 M2，但锁顺序要求先获取 M2 中的锁再获取 M1 中的锁。有时锁的标识事先不知道，也许是因为必须先持有一个锁才能发现要获取的下一个锁的标识。这种情况在文件系统中出现，因为它查找路径名中的连续组件，以及在 {\tt wait} 和 {\tt exit} 系统调用的代码中，因为它们搜索进程表寻找子进程。最后，死锁的危险通常是锁定方案可以做得多细粒度的约束，因为更多的锁通常意味着更多的死锁机会。避免死锁的需要通常是内核实现中的一个主要因素。
 
-A question that sometimes arises is what should happen if a CPU tries
-to acquire a lock that the same CPU already holds. One line of
-reasoning is that this should be allowed: no other CPU can hold the
-lock, so there's no need to worry about CPUs interfering with each
-others' use of the protected data. Locking systems that allow a CPU to
-re-aquire a lock it alread holds are called a {\it re-entrant} or {\it
-  recursive}. On the other hand, if a lock is already held, even on
-the same CPU, that means an operation may have temporarily violated
-and not yet restored some invariants; to allow a new operation to
-commence while the invariants don't hold seems like an invitation to
-bugs. Xv6 takes this latter view, and forbids a CPU that currently
-holds a lock from re-acquiring it. Detecting this situation is the
-purpose of the call to {\tt holding} in {\tt acquire}.
+有时会出现一个问题是，如果 CPU 尝试获取同一 CPU 已持有的锁应该发生什么。一条推理线是这应该被允许：没有其他 CPU 可以持有该锁，所以不必担心 CPU 干扰彼此使用受保护的数据。允许 CPU 重新获取它已持有的锁的锁系统称为{\it 可重入}或{\it 递归}。另一方面，如果锁已被持有，即使在同一 CPU 上，也意味着操作可能已暂时违反且尚未恢复某些不变量；允许在不变量不成立时开始新操作似乎是错误的邀请。Xv6 持后一种观点，并禁止当前持有锁的 CPU 重新获取它。检测这种情况是 {\tt acquire} 中调用 {\tt holding} 的目的。
 
-\section{Locks and interrupts}
+\section{锁和中断}
 \label{s:lockinter}
 
 %% 
@@ -654,58 +491,36 @@ and
 calls
 \indexcode{pop_off}
 \lineref{kernel/spinlock.c:/^pop_off/}
-to track the nesting level of locks on the current CPU.
-When that count reaches zero,
-\lstinline{pop_off} 
-restores the interrupt enable state that existed 
-at the start of the outermost critical section.
-The
+来跟踪当前 CPU 上锁的嵌套级别。
+当该计数达到零时，
+\lstinline{pop_off}
+恢复在最外层临界区开始时存在的中断使能状态。
 \lstinline{intr_off}
-and
+和
 \lstinline{intr_on}
-functions execute RISC-V instructions to disable and enable
-interrupts, respectively.
+函数分别执行 RISC-V 指令以禁用和启用中断。
 
-It is important that
+重要的是
 \indexcode{acquire}
-call
-\lstinline{push_off}
-strictly before setting
+严格在设置
 \lstinline{lk->locked}
-\lineref{kernel/spinlock.c:/sync_lock_test_and_set/}.
-If the two were reversed, there would be
-a brief window when the lock
-was held with interrupts enabled, and
-an unfortunately timed interrupt would deadlock the system.
-Similarly, it is important that
+\lineref{kernel/spinlock.c:/sync_lock_test_and_set/}
+之前调用
+\lstinline{push_off}。
+如果两者顺序颠倒，会有一个短暂的窗口期，锁被持有但中断是启用的，一个不幸时序的中断会使系统死锁。
+类似地，重要的是
 \indexcode{release}
-call
-\indexcode{pop_off}
-only after 
-releasing the lock
-\lineref{kernel/spinlock.c:/sync_lock_release/}.
+只在
+释放锁之后
+\lineref{kernel/spinlock.c:/sync_lock_release/}
+调用
+\indexcode{pop_off}。
 
 %% 
-\section{Instruction and memory ordering}
+\section{指令和内存排序}
 %% 
 
-It is natural to think of programs executing in the order
-in which source code statements appear.
-That's a reasonable mental model for single-threaded
-code, but is incorrect when
-multiple threads interact through shared memory~\cite{riscv:user,boehm04}.
-One reason is that compilers emit load and store
-instructions in orders different from those implied
-by the source code, and may entirely omit them
-(for example by caching data in registers).
-Another reason is that the CPU may execute instructions
-out of order to increase performance.
-For
-example, a CPU may notice that in a serial sequence of
-instructions A and B are not dependent on each other.
-The CPU may start instruction B first, either because its
-inputs are ready before A's inputs, or in order to overlap
-execution of A and B.
+将程序视为按源代码语句出现的顺序执行是很自然的。对于单线程代码，这是一个合理的心智模型，但当多个线程通过共享内存交互时，这是不正确的。一个原因是编译器以不同于源代码暗示的顺序发出加载和存储指令，并且可能完全省略它们（例如通过在寄存器中缓存数据）。另一个原因是 CPU 可能为了性能而乱序执行指令。例如，CPU 可能注意到在串行指令序列中 A 和 B 彼此不依赖。CPU 可能先开始指令 B，要么因为它的输入比 A 的输入先准备好，要么为了重叠执行 A 和 B。
 
 As an example of what could go wrong,
 in this code for
