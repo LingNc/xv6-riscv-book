@@ -325,10 +325,13 @@
 **必需软件**:
 - `xelatex` (通过 texlive-xetex 或完整 TeX Live 安装)
 
+**可选软件**:
+- `gnuplot-lua-tikz` (如需生成图表，或注释掉 `book.tex` 中的 `\usepackage{gnuplot-lua-tikz}`)
+
 **安装命令** (Debian/Ubuntu):
 ```bash
 sudo apt-get install texlive-xetex texlive-lang-chinese
-sudo apt-get install fonts-noto-cjk  # Noto CJK 字体
+# 可选: sudo apt-get install gnuplot-lua-tikz
 ```
 
 **编译方式**:
@@ -364,7 +367,8 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 3. 更新字体缓存: `fc-cache -fv`
 
 **系统字体优先级**:
-- Linux: 默认使用 Noto CJK 字体（已预装在大多数发行版）
+- **TeX Live 自带**: Fandol 字体（宋体/黑体/楷体/仿宋）- **当前实际使用**
+- Linux: Noto CJK 字体（系统预装）
 - macOS: 可安装思源宋体或直接使用系统中文字体
 - Windows: 可使用 SimSun/SimHei 等系统自带字体
 
@@ -404,15 +408,15 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 
 **编译器状态**:
 ```
-❌ xelatex    (未安装)
-❌ pdflatex   (未安装)
-❌ lualatex   (未安装)
+✅ xelatex    - TeX Live 2026 (/usr/local/texlive/2026/bin/x86_64-linux/)
+✅ 版本       - XeTeX 3.141592653-2.6-0.999998
+✅ 编译测试   - 通过 (生成book.pdf 49页)
 ```
 
-**待办事项**:
-- [ ] 安装 texlive-xetex: `sudo apt-get install texlive-xetex texlive-lang-chinese`
-- [ ] 运行编译测试: `./build-cn.sh`
-- [ ] 验证 PDF 生成和中文显示
+**实际使用字体**: Fandol (TeX Live 2026自带)
+- Fandol Song (宋体)
+- Fandol Hei (黑体)
+- Fandol Kai (楷体)
 
 ## Git 规范
 - commit 信息简略明确
@@ -438,9 +442,12 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 | sum.tex | 待翻译 | - | 14 | 低 |
 
 ## 当前焦点
-- first.tex 质量审查进行中 (Reviewer)
-- 待安装 texlive-xetex 以完成 LaTeX 中文编译环境
-  - 安装命令: `sudo apt-get install texlive-xetex texlive-lang-chinese`
-  - 当前可用字体: Noto Serif/Sans CJK SC (系统已预装)
-  - 方正字体需手动安装（可选）
-- 优先级: first.tex (入门章节) -> unix.tex (基础概述)
+1. **first.tex质量审查** - Reviewer进行中
+2. **编译环境** - ✅ 已就绪 (TeX Live 2026 + xelatex + Fandol字体)
+3. **下一章节候选** - unix.tex (1116行) 或 mem.tex (924行)
+
+## 已完成里程碑
+- ✅ 术语挖掘: 120+术语，7组易混淆清单
+- ✅ LaTeX中文配置: book.tex, build-cn.sh, 编译成功
+- ✅ first.tex翻译: 全文465行中文翻译
+- ✅ 编译验证: book.pdf 49页生成成功
