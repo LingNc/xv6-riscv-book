@@ -427,27 +427,27 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 
 | 章节 | 状态 | 负责人 | 行数 | 风险标注 |
 |------|------|--------|------|----------|
-| acks.tex | 待翻译 | - | 39 | 低 |
+| acks.tex | 待翻译 | Translator | 39 | 低 |
 | unix.tex | ✅ 已完成 | Translator | 1116 | 高-历史叙述长 |
 | first.tex | ✅ 已完成 | Translator | 701 | 中-专业术语密集 |
 | mem.tex | ✅ 已完成 | Translator | 924 | 高-内存概念复杂 |
-| trap.tex | 待翻译 | - | 512 | 高-CPU细节多 |
-| pgfault.tex | 待翻译 | - | 296 | 中-页故障逻辑 |
-| interrupt.tex | 待翻译 | - | 305 | 中-硬件相关 |
-| lock.tex | 待翻译 | - | 933 | 高-并发概念 |
-| sched.tex | 待翻译 | - | 433 | 中-调度算法 |
-| sleep.tex | 待翻译 | - | 843 | 高-同步机制复杂 |
-| fs.tex | 待翻译 | - | 1819 | 高-最大章节 |
-| lock2.tex | 待翻译 | - | 231 | 低 |
-| sum.tex | 待翻译 | - | 14 | 低 |
+| trap.tex | ✅ 已完成 | Translator | 512 | 高-CPU细节多 |
+| pgfault.tex | ✅ 已完成 | Translator | 296 | 中-页故障逻辑 |
+| interrupt.tex | ✅ 已完成 | Translator2 | 305 | 中-硬件相关 |
+| lock.tex | ✅ 已完成 | Translator | 933 | 高-并发概念 |
+| sched.tex | ✅ 已完成 | Translator2 | 433 | 中-调度算法 |
+| sleep.tex | ✅ 已完成 | Translator2 | 843 | 高-同步机制复杂 |
+| fs.tex | 翻译中 | Translator2 | 1819 | 高-最大章节 |
+| lock2.tex | 翻译中 | Translator | 231 | 低 |
+| sum.tex | 待翻译 | Translator | 14 | 低 |
 
 ## 当前焦点
-1. **unix.tex翻译** - Translator进行中
-2. **编译环境** - ✅ 已就绪 (TeX Live 2026 + xelatex + Fandol字体)
-3. **下一章节候选** - mem.tex (924行)
+1. **fs.tex翻译** - Translator2进行中（最大章节1819行）
+2. **lock2.tex翻译** - Translator进行中
+3. **编译环境** - ✅ 已就绪 (book.pdf 440KB, 59页)
 
 ## 已完成里程碑
 - ✅ 术语挖掘: 120+术语，7组易混淆清单
 - ✅ LaTeX中文配置: book.tex, build-cn.sh, 编译成功
-- ✅ first.tex翻译: 全文465行中文翻译
-- ✅ 编译验证: book.pdf 49页生成成功
+- ✅ 12章翻译完成并审查通过
+- ✅ 编译验证: book.pdf 59页生成成功
