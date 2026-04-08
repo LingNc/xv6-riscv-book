@@ -1,44 +1,13 @@
-\chapter{Concurrency revisited}
+\chapter{并发重访}
 \label{CH:LOCK2}
 
-Simultaneously obtaining good parallel
-performance, correctness despite concurrency, and understandable code
-is a big challenge in kernel design.
-Straightforward use of locks is the best path to correctness,
-but is not always possible.
-This
-chapter highlights examples in which xv6 is forced to use locks in an
-involved way, and examples where xv6 uses lock-like techniques but not
-locks.
+在内核设计中，同时获得良好的并行性能、并发下的正确性和可理解的代码是一个巨大的挑战。直接使用锁是获得正确性的最佳途径，但并不总是可能的。本章重点介绍 xv6 被迫以复杂方式使用锁的例子，以及 xv6 使用类似锁的技术但不使用锁的例子。
 
-\section{Locking patterns}
+\section{锁模式}
 
-Cached items are often a challenge to lock.
-For example,
-the file system's block cache \lineref{kernel/bio.c:/^struct/} stores
-copies of up to {\tt NBUF} disk blocks.
-It's vital that a given disk block have at most
-one copy in the cache; otherwise, different processes might make
-conflicting changes to different copies of what ought to be the same
-block. Each cached block is stored in a {\tt struct buf}
-\fileref{kernel/buf.h}. A {\tt struct buf} has a lock field which
-helps ensure that only one process uses a given disk block at a time.
-However, that lock is not enough: what if a block is not present in
-the cache at all, and two processes want to use it at the same time?
-There is no {\tt struct buf} (since the block isn't yet cached), and
-thus there is nothing to lock. Xv6 deals with this situation by
-associating an additional lock ({\tt bcache.lock}) with the set of
-identities of cached blocks. Code that needs to check if a block is
-cached (e.g., {\tt bget} \lineref{kernel/bio.c:/^bget/}), or change the
-set of cached blocks, must hold {\tt bcache.lock}; after that code has
-found the block and {\tt struct buf} it needs, it can release {\tt
-  bcache.lock} and lock just the specific block. This is a common
-pattern: one lock for the set of items, plus one lock per item.
+缓存项通常对加锁是一个挑战。例如，文件系统的块缓存 \lineref{kernel/bio.c:/^struct/} 存储最多 {\tt NBUF} 个磁盘块的副本。给定磁盘块在缓存中最多只有一个副本是至关重要的；否则，不同的进程可能会对应该是同一块的不同副本做出冲突的更改。每个缓存块存储在 {\tt struct buf} \fileref{kernel/buf.h} 中。{\tt struct buf} 有一个锁字段，有助于确保一次只有一个进程使用给定的磁盘块。然而，这个锁是不够的：如果块根本不在缓存中，两个进程想要同时使用它怎么办？没有 {\tt struct buf}（因为块尚未缓存），因此没有什么可以锁定的。Xv6 通过将额外的锁（{\tt bcache.lock}）与缓存块的身份集相关联来处理这种情况。需要检查块是否已缓存的代码（例如，{\tt bget} \lineref{kernel/bio.c:/^bget/}）或更改缓存块集的代码必须持有 {\tt bcache.lock}；在该代码找到块和它需要的 {\tt struct buf} 之后，它可以释放 {\tt bcache.lock} 并只锁定特定的块。这是一种常见模式：一个锁用于项集，加上每个项一个锁。
 
-Ordinarily the same function that acquires a lock will release it. But
-a more precise way to view things is that a lock is acquired at the
-start of a sequence that must appear atomic, and released when that
-sequence ends. If the sequence starts and ends in different functions,
+通常，获取锁的同一个函数会释放它。但更精确的看法是，锁在必须表现为原子的序列开始时获取，在该序列结束时释放。 If the sequence starts and ends in different functions,
 or different threads, or on different CPUs, then the lock acquire and
 release must do the same. The function of the lock is to force
 other uses to wait, not to pin a piece of data to a particular agent. One
@@ -50,46 +19,11 @@ code often sleeps while reading the disk; it may wake up on a
 different CPU, which means the lock may be acquired
 and released on different CPUs.
 
-Freeing an object that is protected by a lock embedded in the object
-is a delicate business, since owning the lock is
-not enough to guarantee that freeing would be correct. The problem
-case arises when some other thread is waiting in {\tt acquire} to use
-the object; freeing the object implicitly frees the embedded lock, which will
-cause the waiting thread to malfunction. One solution is to track how
-many references to the object exist, so that it is only freed when the
-last reference disappears. See {\tt pipeclose}
-\lineref{kernel/pipe.c:/^pipeclose/} for an example;
-{\tt pi->readopen} and {\tt pi->writeopen} track whether
-the pipe has file descriptors referring to it.
+释放受嵌入在对象中的锁保护的对象是一项微妙的业务，因为拥有锁不足以保证释放是正确的。问题情况发生在其他线程在 {\tt acquire} 中等待使用对象时；释放对象隐式释放嵌入的锁，这将导致等待线程故障。一种解决方案是跟踪对对象的引用数量，以便仅在最后一个引用消失时才释放它。参见 {\tt pipeclose} \lineref{kernel/pipe.c:/^pipeclose/} 作为示例；{\tt pi->readopen} 和 {\tt pi->writeopen} 跟踪管道是否有文件描述符引用它。
 
-Usually one sees locks around sequences of reads and writes to sets of related
-items; the locks ensure that other threads see only completed sequences of
-updates (as long as they, too, lock).
-What about situations where the update is a simple write to a
-single shared variable? For example, 
-\texttt{setkilled} and \texttt{killed}
-\lineref{kernel/proc.c:/^setkilled/}
-lock around their simple uses of
-\lstinline{p->killed}.
-If there were no lock, one thread could write 
-\lstinline{p->killed}
-at the same time that another thread reads it.
-This is a \indextextx{race}, and the C language specification says
-that a race yields \indextext{undefined behavior}, which means the
-program may crash or yield incorrect results\footnote{``Threads and
-data races'' in \url{
-https://en.cppreference.com/w/c/language/memory_model}}. The locks
-prevent the race and avoid the undefined behavior.
+通常，你会在对相关项目集进行读写序列周围看到锁；锁确保其他线程只看到已完成的更新序列（只要它们也加锁）。如果更新是对单个共享变量的简单写入呢？例如，\texttt{setkilled} 和 \texttt{killed} \lineref{kernel/proc.c:/^setkilled/} 在它们对 \lstinline{p->killed} 的简单使用周围加锁。如果没有锁，一个线程可能在另一个线程读取它的同时写入 \lstinline{p->killed}。这是一个 \indextextx{竞态}，C 语言规范说竞态产生 \indextext{未定义行为}，这意味着程序可能崩溃或产生不正确的结果。锁防止竞态并避免未定义行为。
 
-One reason races can break programs is that, if there are no
-locks or equivalent constructs, the compiler may generate machine code
-that reads and writes memory in ways quite different than
-the original C code. For example, the machine code
-of a thread calling
-\texttt{killed} could copy \lstinline{p->killed} to a register and
-read only that cached value; this would mean that the thread
-might never see any writes to
-\lstinline{p->killed}. The locks prevent such caching.
+竞态可能破坏程序的一个原因是，如果没有锁或等效构造，编译器可能生成以与原始 C 代码截然不同的方式读写内存的机器代码。例如，调用 \texttt{killed} 的线程的机器代码可能将 \lstinline{p->killed} 复制到寄存器，并且只读取那个缓存值；这意味着该线程可能永远看不到对 \lstinline{p->killed} 的任何写入。锁防止这种缓存。
 
 % sleep locks.
 % hand-over-hand locking in namei.
@@ -98,134 +32,43 @@ might never see any writes to
 % example of where deadlock is avoided? namei?
 % spawn a thread to evade a lock order problem?
 
-\section{Lock-like patterns}
+\section{类似锁的模式}
 
-In many places xv6 uses a reference count or a flag in a lock-like way
-to indicate that an object is allocated and should not be freed
-or re-used. A process's {\tt p->state} acts in this way, as do the
-reference counts in {\tt file}, {\tt inode}, and {\tt buf} structures.
-While in each case a lock protects the flag or reference count, it is
-the latter that prevents the object from being prematurely freed.
+在许多地方，xv6 以类似锁的方式使用引用计数或标志来指示对象已分配且不应被释放或重新使用。进程的 {\tt p->state} 以这种方式工作，{\tt file}、{\tt inode} 和 {\tt buf} 结构中的引用计数也是如此。虽然在每种情况下锁都保护标志或引用计数，但正是后者防止对象被过早释放。
 
-The file system uses {\tt struct inode} reference counts as a kind of
-shared lock that can be held by multiple processes, in order to avoid
-deadlocks that would occur if the code used ordinary locks. For
-example, the loop in {\tt namex} \lineref{kernel/fs.c:/^namex/} locks
-the directory named by each pathname component in turn. However, {\tt namex}
-must release each lock at the end of the loop, since if it
-held multiple locks it could deadlock with itself if the pathname
-included a dot (e.g., {\tt a/./b}). It might also deadlock with a
-concurrent lookup involving the directory and {\tt ..}. As
-Chapter~\ref{CH:FS} explains, the solution is for the loop to carry
-the directory inode over to the next iteration with its reference
-count incremented, but not locked.
+文件系统使用 {\tt struct inode} 引用计数作为一种可以被多个进程持有的共享锁，以避免如果代码使用普通锁会发生的死锁。例如，{\tt namex} \lineref{kernel/fs.c:/^namex/} 中的循环依次锁定路径名命名的每个目录。然而，{\tt namex} 必须在循环结束时释放每个锁，因为如果它持有多个锁，如果路径名包含点（例如，{\tt a/./b}），它可能会与自己死锁。它也可能与涉及目录和 {\tt ..} 的并发查找死锁。如 Chapter~\ref{CH:FS} 所解释的，解决方案是让循环将其引用计数递增的目录 inode 带到下一次迭代，但不锁定。
 
-Some data items are protected by different mechanisms at different
-times, and may at times be protected from concurrent access implicitly
-by the structure of the xv6 code rather than by explicit locks. For
-example, when a physical page is free, it is protected by \texttt{kmem.lock}
-\lineref{kernel/kalloc.c:/^. kmem;/}. If the page is then
-allocated as a pipe \lineref{kernel/pipe.c:/^pipealloc/}, it is
-protected by a different lock (the embedded \lstinline{pi->lock}). If the page
-is re-allocated for a new process's user memory, it is not protected by a
-lock at all. Instead, the fact that the allocator won't give that page
-to any other process (until it is freed) protects it from concurrent
-access. 
-The ownership of a new process's memory is complex:
-first the parent allocates and
-manipulates it in {\tt fork}, then the child uses it, and (after the
-child exits) the parent again owns the memory and passes it to {\tt
-  kfree}. There are two lessons here: a data object may be protected
-from concurrency in different ways at different points in its
-lifetime, and the protection may take the form of implicit structure
-rather than explicit locks.
+某些数据项在不同时间受不同机制保护，有时可能由 xv6 代码的结构隐式保护免受并发访问，而不是由显式锁保护。例如，当物理页面空闲时，它受 \texttt{kmem.lock} \lineref{kernel/kalloc.c:/^. kmem;/} 保护。如果页面然后被分配为管道 \lineref{kernel/pipe.c:/^pipealloc/}，它受不同的锁保护（嵌入的 \lstinline{pi->lock}）。如果页面被重新分配给新进程的用户内存，它根本不受锁保护。相反，分配器不会将该页面给予任何其他进程（直到它被释放）这一事实保护它免受并发访问。
+新进程内存的所有权很复杂：首先在 {\tt fork} 中父进程分配和操作它，然后子进程使用它，（子进程退出后）父进程再次拥有内存并将其传递给 {\tt kfree}。这里有两个教训：数据对象在其生命周期的不同时间点可能以不同方式免受并发保护，保护可能采取隐式结构的形式而不是显式锁。
 
-A final lock-like example is the need to disable interrupts around
-calls to {\tt mycpu()} \lineref{kernel/proc.c:/^myproc/}. Disabling
-interrupts causes the calling code to be atomic with respect to timer
-interrupts that could force a context switch, and thus move the
-process to a different CPU.
+最后一个类似锁的例子是在调用 {\tt mycpu()} \lineref{kernel/proc.c:/^myproc/} 周围需要禁用中断。禁用中断使调用代码相对于可能强制上下文切换的定时器中断是原子的，从而将进程移动到不同的 CPU。
 
-\section{No locks at all}
+\section{完全没有锁}
 
-There are a few places where xv6 shares mutable data with no locks at
-all. One is in the implementation of spinlocks, although one could
-view the RISC-V atomic instructions as relying on locks implemented in
-hardware. Another is the {\tt started} variable in {\tt main.c}
-\lineref{kernel/main.c:/^volatile/}, used to prevent other CPUs from
-running until CPU zero has finished initializing xv6;
-the {\tt volatile} ensures that the compiler actually generates
-load and store instructions.
+有几个地方 xv6 完全没有锁就共享可变数据。一个是在自旋锁的实现中，尽管可以将 RISC-V 原子指令视为依赖于硬件中实现的锁。另一个是 {\tt main.c} 中的 {\tt started} 变量 \lineref{kernel/main.c:/^volatile/}，用于防止其他 CPU 运行，直到 CPU 零完成初始化 xv6；{\tt volatile} 确保编译器实际生成加载和存储指令。
 
-Xv6 contains cases in which one CPU or thread writes some data, and
-another CPU or thread reads the data, but there is no specific lock
-dedicated to protecting that data. For example, in {\tt fork}, the
-parent writes the child's user memory pages, and the child (a
-different thread, perhaps on a different CPU) reads those pages; no
-lock explicitly protects those pages. This is not strictly a locking
-problem, since the child doesn't start executing until after the parent has
-finished writing. It is a potential memory ordering problem
-(see Chapter~\ref{CH:LOCK}), since without a memory barrier there's no
-reason to expect one CPU to see another CPU's writes. However, since
-the parent releases locks, and the child acquires locks as it starts
-up, the memory barriers in {\tt acquire} and {\tt release}
-ensure that the child's CPU sees the parent's writes.
+Xv6 包含一个 CPU 或线程写入一些数据，另一个 CPU 或线程读取数据，但没有特定锁专门保护该数据的情况。例如，在 {\tt fork} 中，父进程写入子进程的用户内存页，子进程（不同的线程，可能在不同的 CPU 上）读取这些页面；没有锁显式保护这些页面。这严格来说不是锁问题，因为子进程在父进程完成写入后才开始执行。这是一个潜在的内存排序问题（参见 Chapter~\ref{CH:LOCK}），因为如果没有内存屏障，没有理由期望一个 CPU 看到另一个 CPU 的写入。然而，由于父进程释放锁，子进程在启动时获取锁，{\tt acquire} 和 {\tt release} 中的内存屏障确保子进程的 CPU 看到父进程的写入。
 
-\section{Parallelism}
+\section{并行性}
 
-Locking is primarily about suppressing parallelism in the interests of
-correctness. Because performance is also important, kernel designers
-often have to think about how to use locks in a way that both achieves 
-correctness and allows parallelism. While xv6 is not systematically
-designed for high performance, it's still worth considering which xv6
-operations can execute in parallel, and which might conflict on locks.
+锁主要用于在正确性的利益下抑制并行性。因为性能也很重要，内核设计者通常必须考虑如何以既能实现正确性又能允许并行性的方式使用锁。虽然 xv6 不是为高性能系统设计的，但考虑哪些 xv6 操作可以并行执行，哪些可能在锁上冲突仍然值得。
 
-Pipes in xv6 are an example of fairly good parallelism. Each pipe has
-its own lock, so that different processes can read and write 
-different pipes in parallel on different CPUs. For a given pipe,
-however, the writer and reader must wait for each other to release the
-lock; they can't read/write the same pipe at the same time. It is also
-the case that a read from an empty pipe (or a write to a full pipe)
-must block, but this is not due to the locking scheme.
+Xv6 中的管道是适度良好并行性的一个例子。每个管道有自己的锁，因此不同进程可以在不同 CPU 上并行读写不同管道。对于给定管道，然而，写入者和读取者必须等待对方释放锁；它们不能同时读/写同一管道。从空管道读取（或写入满管道）必须阻塞的情况也是如此，但这不是由于锁定方案。
 
-Context switching is a more complex example. Two kernel threads, each
-executing on its own CPU, can call {\tt yield}, {\tt sched}, and {\tt
-  swtch} at the same time, and the calls will execute in parallel. The
-threads each hold a lock, but they are different locks, so they don't
-have to wait for each other. Once in {\tt scheduler}, however, the two
-CPUs may conflict on locks while searching the table of processes for
-one that is {\tt RUNNABLE}. That is, xv6 is likely to get a
-performance benefit from multiple CPUs during context switch, but
-perhaps not as much as it could.
+上下文切换是一个更复杂的例子。两个内核线程，每个在自己的 CPU 上执行，可以同时调用 {\tt yield}、{\tt sched} 和 {\tt swtch}，调用将并行执行。线程各自持有一个锁，但它们是不同的锁，因此它们不必等待对方。然而，一旦进入 {\tt scheduler}，两个 CPU 可能在搜索 {\tt RUNNABLE} 进程表时冲突在锁上。也就是说，xv6 可能在上下文切换期间从多个 CPU 获得性能提升，但也许不如它可能获得的那么多。
 
-Another example is concurrent calls to {\tt fork} from different
-processes on different CPUs. The calls may have to wait for each other
-for {\tt pid\_lock} and {\tt kmem.lock}, and for per-process locks
-needed to search the process table for an {\tt UNUSED} process. On the
-other hand, the two forking processes can copy user memory pages and
-format page-table pages fully in parallel.
+另一个例子是来自不同 CPU 上不同进程的 {\tt fork} 的并发调用。调用可能不得不等待彼此的 {\tt pid_lock} 和 {\tt kmem.lock}，以及在进程表中搜索 {\tt UNUSED} 进程所需的每个进程锁。另一方面，两个 fork 进程可以完全并行地复制用户内存页和格式化页表页。
 
-The locking scheme in each of the above examples sacrifices parallel
-performance in certain cases. In each case it's possible to obtain
-more parallelism using a more elaborate design. Whether it's
-worthwhile depends on details: how often the relevant operations are
-invoked, how long the code spends with a contended lock held, how many
-CPUs might be running conflicting operations at the same time, whether
-other parts of the code are more restrictive bottlenecks. It can be
-difficult to guess whether a given locking scheme might cause
-performance problems, or whether a new design is significantly better,
-so measurement on realistic workloads is often required.
+上述每个例子中的锁定方案在某些情况下牺牲了并行性能。在每种情况下，可以使用更复杂的设计获得更多并行性。是否值得取决于细节：相关操作被调用的频率，代码在持有争用锁时花费多长时间，多少 CPU 可能同时运行冲突操作，代码的其他部分是否是更具限制性的瓶颈。很难猜测给定的锁定方案是否可能导致性能问题，或者新设计是否显著更好，因此通常需要在实际工作负载上进行测量。
 
-\section{Exercises}
+\section{练习}
 
 \begin{enumerate}
 
-\item Modify xv6's pipe implementation to allow a read and
-  a write to the same pipe to proceed in parallel on different CPUs.
+\item 修改 xv6 的管道实现，允许在不同 CPU 上同时读取和写入同一管道。
 
-\item Modify xv6's \texttt{scheduler()} to reduce lock contention
-  when different CPUs are looking for runnable processes at the same time.
+\item 修改 xv6 的 \texttt{scheduler()} 以减少当不同 CPU 同时查找可运行进程时的锁争用。
 
-\item Eliminate some of the serialization in xv6's \texttt{fork()}.
+\item 消除 xv6 的 \texttt{fork()} 中的一些串行化。
 
 \end{enumerate}
