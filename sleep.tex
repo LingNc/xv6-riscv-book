@@ -1,67 +1,57 @@
-\chapter{Sleep and Wakeup}
+\chapter{睡眠和唤醒}
 \label{CH:SLEEP}
-%% 
+%%
 
-Scheduling and locks help conceal the actions of one thread
-from another,
-but we also need abstractions that help
-threads intentionally interact.
-For example, the reader of a pipe in xv6 may need to wait
-for a writing process to produce data;
-a parent's call to \lstinline{wait} may need to
-wait for a child to exit; and
-a process reading the disk needs to wait
-for the disk hardware to finish the read.
-The xv6 kernel uses a mechanism called sleep and wakeup
-in these situations (and many others).
-Sleep allows a kernel thread to
-wait for some condition to be true; another thread
-or an interrupt handler can cause the condition
-to be true (typically by modifying some variable(s))
-and then call wakeup
-to indicate that threads waiting for the condition should resume.
-Sleep and wakeup are often called 
-\indextext{sequence coordination}
-or 
-\indextext{conditional synchronization}
-mechanisms.
+调度和锁有助于隐藏一个线程的操作
+免受另一个线程的影响，
+但我们也需要能够帮助线程有意交互的抽象。
+例如，xv6 中管道的读取者可能需要等待
+写入进程产生数据；
+父进程对 \lstinline{wait} 的调用可能需要等待子进程退出；
+而且读取磁盘的进程需要等待
+磁盘硬件完成读取。
+Xv6 内核在这些情况（以及许多其他情况）下使用一种称为睡眠和唤醒的机制。
+睡眠允许内核线程等待某个条件变为真；
+另一个线程或中断处理程序可以使条件变为真（通常通过修改某些变量），
+然后调用唤醒来指示等待该条件的线程应该恢复执行。
+睡眠和唤醒通常被称为
+\indextext{序列协调（sequence coordination）}
+或
+\indextext{条件同步（conditional synchronization）}
+机制。
 
-Before proceeding, please read the functions {\tt sleep()} and {\tt
-  wakeup()} in {\tt kernel/proc.c}, and all of file {\tt kernel/pipe.c}.
+在继续之前，请先阅读 {\tt kernel/proc.c} 中的函数 {\tt sleep()} 和 {\tt
+  wakeup()}，以及 {\tt kernel/pipe.c} 的全部内容。
 
-\section{Overview}
+\section{概述}
 
-The sleep/wakeup interface looks like:
+睡眠/唤醒接口如下所示：
 
 \begin{lstlisting}
 void sleep(void *chan, struct spinlock *lk)
 void wakeup(void *chan)
 \end{lstlisting}
 
-\lstinline{sleep()} marks the calling process as \lstinline{SLEEPING}
-(not \lstinline{RUNNABLE}) and releases the CPU by context-switching 
-to the scheduler, so that other processes can run.
-The \lstinline{chan} argument is called the \indextext{wait channel}.
-\lstinline{wakeup(chan)} wakes up all processes (if any)
-that have called \lstinline{sleep(chan, ...)} with the same \lstinline{chan}
-value. \lstinline{sleep} and \lstinline{wakeup} treat \lstinline{chan}
-as an opaque 64-bit value; the only thing they do with it is compare for
-equality. The usual pattern is for callers to pass the address of
-some convenient object as the \lstinline{chan} argument.
+\lstinline{sleep()} 将调用进程标记为 \lstinline{SLEEPING}
+（而不是 \lstinline{RUNNABLE}），并通过上下文切换到调度器来释放 CPU，
+以便其他进程可以运行。
+\lstinline{chan} 参数称为 \indextext{等待通道（wait channel）}。
+\lstinline{wakeup(chan)} 唤醒所有调用 \lstinline{sleep(chan, ...)} 且使用相同 \lstinline{chan}
+值的进程（如果有的话）。\lstinline{sleep} 和 \lstinline{wakeup} 将 \lstinline{chan}
+视为不透明的 64 位值；它们对 \lstinline{chan} 所做的唯一操作是相等性比较。
+通常的模式是调用者传递某个方便的对象的地址作为 \lstinline{chan} 参数。
 
-Kernel code calls \lstinline{sleep} to wait for some
-\indextext{condition} to become true. For example, the kernel code
-that reads from a pipe calls \lstinline{sleep} if the pipe buffer is
-currently empty; the condition in this case is the pipe buffer
-becoming non-empty (due to another process writing to the pipe).
-\lstinline{sleep} and \lstinline{wakeup} do not know what the
-condition is: only the calling code knows. The usual pattern is for
-the caller to first check the condition, and call \lstinline{sleep}
-if it is not true; code that later makes the
-condition true calls \lstinline{wakeup}.
+内核代码调用 \lstinline{sleep} 来等待某个
+\indextext{条件（condition）}
+变为真。例如，如果从管道读取的内核代码发现管道缓冲区
+当前为空，则调用 \lstinline{sleep}；
+这种情况下的条件是管道缓冲区变为非空（由于另一个进程写入管道）。
+\lstinline{sleep} 和 \lstinline{wakeup} 不知道条件是什么：只有调用代码知道。
+通常的模式是调用者首先检查条件，如果条件不为真则调用 \lstinline{sleep}；
+稍后使条件为真的代码调用 \lstinline{wakeup}。
 
-Here's a sketch of how the xv6 kernel pipe code uses
-\lstinline{sleep} and \lstinline{wakeup}:
+以下是 xv6 内核管道代码如何使用
+\lstinline{sleep} 和 \lstinline{wakeup} 的草图：
 
 \begin{lstlisting}
 piperead(pipe){
@@ -82,762 +72,657 @@ pipewrite(pipe){
 }
 \end{lstlisting}
 
-This code uses the address of the pipe data structure as
-the wait channel.
+这段代码使用管道数据结构的地址作为等待通道。
 
-What is the \lstinline{lk} argument to \lstinline{sleep}?
-In all uses of \lstinline{sleep}/\lstinline{wakeup}
-the condition involves shared data, used by both the
-thread that sleeps and the thread that calls \lstinline{wakeup}, so
-there always turns out to be a lock that protects the condition. That lock is
-called the \indextext{condition lock}. In the pipe code above, both
-functions use the pipe and its buffer while holding the pipe lock,
-which in this case is also the condition lock. It's a rule that any code
-that calls \lstinline{sleep} or \lstinline{wakeup} must hold the
-condition lock, and that the lock must be passed to \lstinline{sleep}
-as the second argument.
+\lstinline{lk} 参数对 \lstinline{sleep} 有什么作用？
+在所有 \lstinline{sleep}/\lstinline{wakeup} 的使用中，
+条件涉及共享数据，由睡眠线程和调用 \lstinline{wakeup} 的线程使用，
+因此总有一个保护条件的锁。该锁称为 \indextext{条件锁（condition lock）}。
+在上面的管道代码中，两个函数在持有管道锁的同时使用管道及其缓冲区，
+在这种情况下，管道锁也是条件锁。
+规则是任何调用 \lstinline{sleep} 或 \lstinline{wakeup} 的代码必须持有条件锁，
+而且该锁必须作为第二个参数传递给 \lstinline{sleep}。
 
-The reason that the condition lock must be held when \lstinline{sleep}
-is called, and that it must be passed to \lstinline{sleep}, is to
-prevent the possibility that another thread might call
-\lstinline{wakeup} between the check of the condition 
-and the call to \lstinline{sleep}. A call to
-\lstinline{wakeup} at that point would find no sleeping process to
-wake up; the \lstinline{wakeup} would simply return.
-But then the call to \lstinline{sleep} might never wake up,
-since the \lstinline{wakeup} intended for it has already happened.
-This undesirable situation is called a \indextext{lost wake-up}.
+在调用 \lstinline{sleep} 时必须持有条件锁，
+并且必须将其传递给 \lstinline{sleep} 的原因是防止另一个线程可能在条件检查
+和调用 \lstinline{sleep} 之间调用 \lstinline{wakeup} 的可能性。
+在该点调用 \lstinline{wakeup} 将找不到要唤醒的睡眠进程；
+\lstinline{wakeup} 将直接返回。
+但随后对 \lstinline{sleep} 的调用可能永远不会醒来，
+因为原本打算唤醒它的 \lstinline{wakeup} 已经发生。
+这种不希望发生的情况称为 \indextext{丢失唤醒（lost wake-up）}。
 
-In the pipe example above, the lost wake-up being avoided is the
-possibility that a thread on another CPU might call \lstinline{pipewrite}
-at the point marked {\tt ZZZ},
-between \lstinline{piperead}'s check of the condition and its call to
-\lstinline{sleep}. The fact that \lstinline{piperead} holds the pipe
-lock during the time between when it checks the condition and calls
-\lstinline{sleep} prevents \lstinline{pipewrite} from executing, and
-thus prevents a lost wake-up.
+在上面的管道示例中，避免的丢失唤醒的可能性是
+另一个 CPU 上的线程可能在标记为 {\tt ZZZ} 的点调用 \lstinline{pipewrite}，
+在 \lstinline{piperead} 检查条件和调用 \lstinline{sleep} 之间。
+\lstinline{piperead} 在检查条件和调用 \lstinline{sleep} 之间持有管道锁这一事实阻止了 \lstinline{pipewrite} 执行，
+从而防止了丢失唤醒。
 
-{\tt sleep()} releases the condition lock so that the code calling
-{\tt wakeup()} can proceed. {\tt sleep()} also context-switches to the
-scheduler in order to let other threads run while it is waiting. The
-implementation performs these two steps in a way that is atomic
-(indivisible) with respect to {\tt wakeup()}, to prevent lost
-wake-ups.
+{\tt sleep()} 释放条件锁以便调用 {\tt wakeup()} 的代码可以继续执行。
+{\tt sleep()} 还上下文切换到调度器，以便在等待时让其他线程运行。
+实现以相对于 {\tt wakeup()} 原子的（不可分割的）方式执行这两个步骤，以防止丢失唤醒。
 
-%% 
-\section{Code: Sleep and wakeup}
-%% 
+%%
+\section{代码：睡眠和唤醒}
+%%
 
-Xv6's
+Xv6 的
 \indexcode{sleep}
 \lineref{kernel/proc.c:/^sleep/}
-and
+和
 \indexcode{wakeup}
 \lineref{kernel/proc.c:/^wakeup/}
-implement the interface used in the example above.
-The basic idea is to have
+实现了上面示例中使用的接口。
+基本思想是让
 \lstinline{sleep}
-mark the current process as
+将当前进程标记为
 \indexcode{SLEEPING}
-and then call
+然后调用
 \indexcode{sched}
-to release the CPU;
+释放 CPU；
 \lstinline{wakeup}
-looks for a process sleeping on the given wait channel
-and marks it as 
-\indexcode{RUNNABLE}.
+查找在给定等待通道上睡眠的进程
+并将其标记为
+\indexcode{RUNNABLE}。
 
 \lstinline{sleep}
-acquires 
+获取
 \indexcode{p->lock}
 \lineref{kernel/proc.c:/DOC: sleeplock1/}
-and {\it only then} releases
-the condition lock
-\lstinline{lk}.
-The fact that \lstinline{sleep}
-holds one or the other of these locks at all times is what
-prevents a concurrent \lstinline{wakeup}
-(which must acquire and hold both) from acting,
-and thus prevents a lost wake-up.
-Now that
+然后{\it 才}释放
+条件锁
+\lstinline{lk}。
+\lstinline{sleep} 在任何时候都持有这两个锁中的一个这一事实
+阻止了并发 \lstinline{wakeup}
+（必须获取并持有两个锁）起作用，
+从而防止了丢失唤醒。
+现在
 \lstinline{sleep}
-holds just
-\lstinline{p->lock},
-it can put the process to sleep by recording
-the wait channel,
-changing the process state to \texttt{SLEEPING},
-and calling
+只持有
+\lstinline{p->lock}，
+它可以通过记录等待通道、
+将进程状态更改为 \texttt{SLEEPING}、
+并调用
 \lstinline{sched}
-\linerefs{kernel/proc.c:/chan.=.chan/,/sched/}.
-In a moment it will be clear why it's critical that
-\lstinline{p->lock} is not released (by \lstinline{scheduler}) until after
-the process is marked \texttt{SLEEPING}.
+\linerefs{kernel/proc.c:/chan.=.chan/,/sched/}
+来使进程睡眠。
+稍后就会清楚为什么在进程被标记为 \texttt{SLEEPING} 之前不释放 \lstinline{p->lock}（由 \lstinline{scheduler}）是至关重要的。
 
-At some point, a process will acquire the condition lock,
-set the condition that the sleeper is waiting for,
-and call \lstinline{wakeup(chan)}.
-It's important that \lstinline{wakeup} is called
-while holding the condition lock\footnote{%
+在某个时刻，一个进程将获取条件锁，
+设置睡眠者等待的条件，
+并调用 \lstinline{wakeup(chan)}。
+在持有条件锁时调用 \lstinline{wakeup} 很重要\footnote{%
 %
-Strictly speaking it is sufficient if
+严格来说，只要
 \lstinline{wakeup}
-merely follows the
+在
 \lstinline{acquire}
-(that is, one could call
-\lstinline{wakeup}
-after the
-\lstinline{release}).%
+之后（即，可以在
+\lstinline{release}
+之后调用
+\lstinline{wakeup}）就足够了。%
 %
-}.
+}。
 \lstinline{wakeup}
-loops over the process table
-\lineref{kernel/proc.c:/^wakeup\(/}.
-It acquires the
-\lstinline{p->lock}
-of each process it inspects.
-When \lstinline{wakeup} finds a process in state
+遍历进程表
+\lineref{kernel/proc.c:/^wakeup\(/}。
+它获取它检查的每个进程的
+\lstinline{p->lock}。
+当 \lstinline{wakeup} 找到状态为
 \indexcode{SLEEPING}
-with a matching
-\indexcode{chan},
-it changes that process's state to
-\indexcode{RUNNABLE}.
-The next time \lstinline{scheduler} runs, it will
-see that the process is ready to be run.
+且
+\indexcode{chan}
+匹配的进程时，
+它将该进程的状态更改为
+\indexcode{RUNNABLE}。
+下次 \lstinline{scheduler} 运行时，它将看到该进程已准备好运行。
 
 \begin{figure}[t]
   \input{fig/sleep.tex}
-  \caption{Overlapping locks to avoid lost wake-up}
+  \caption{重叠锁以避免丢失唤醒}
     \label{fig:overlap}
 \end{figure}
 
-Why do the locking rules for 
 \lstinline{sleep}
-and
+和
 \lstinline{wakeup}
-ensure that a process that's going to sleep
-won't miss a concurrent wakeup?
-The going-to-sleep process holds either
-the condition lock or its own
-\lstinline{p->lock} 
-or both from {\it before} it checks the condition
-until {\it after} it has marked itself as \texttt{SLEEPING};
-see Figure~\ref{fig:overlap}.
-The process calling \texttt{wakeup} needs to aquire \textit{both}
-locks.
-The waker might acquire the locks first, which means
-it will make the condition true before the consuming
-thread checks the condition, and the consuming thread
-won't need to call {\tt sleep()};
-or the waker's {\tt acquire()}s might have to wait until the consuming
-thread has completely finished going to sleep and
-releases the locks, in which case the waker will then see
-that the consuming thread is marked {\tt SLEEPING}
-and will wake it up.
+的锁定规则为什么能确保即将睡眠的进程不会错过并发的唤醒？
+即将睡眠的进程在检查条件之前直到标记自己为 \texttt{SLEEPING} 之后持有
+条件锁或它自己的
+\lstinline{p->lock}
+或两者；
+参见图~\ref{fig:overlap}。
+调用 \texttt{wakeup} 的进程需要获取{\it 两个}锁。
+唤醒者可能首先获取锁，这意味着它将在消费线程检查条件之前使条件为真，
+而且消费线程不需要调用 {\tt sleep()}；
+或者唤醒者的 {\tt acquire()} 可能需要等待，直到消费线程完全完成睡眠并
+释放锁，在这种情况下唤醒者将看到消费线程被标记为 {\tt SLEEPING}
+并将唤醒它。
 
-Sometimes multiple processes are sleeping
-on the same channel; for example, more than one process
-reading from a pipe.
-A single call to 
+有时多个进程在同一个通道上睡眠；
+例如，多个进程从管道读取。
+对
 \lstinline{wakeup}
-will wake them all up.
-One of them will run first and acquire the lock that
-\lstinline{sleep}
-was called with, and (in the case of pipes) read whatever
-data is waiting.
-The other processes will find that, despite being woken up,
-there is no data to be read.
-From their point of view the wakeup was ``spurious,'' and
-they must sleep again.
-For this reason \lstinline{sleep} is always called inside a loop that
-re-checks the condition, as in \lstinline{P} above.
+的单个调用将唤醒它们所有。
+其中一个将首先运行并获取 \lstinline{sleep}
+被调用时使用的锁，并（在管道的情况下）读取等待的数据。
+其他进程将发现，尽管被唤醒了，
+但没有数据可读取。
+从它们的角度来看，唤醒是``虚假的（spurious）''，
+它们必须再次睡眠。
+因此 \lstinline{sleep} 总是在重新检查条件的循环内调用，如上面的 \lstinline{P} 所示。
 
-No harm is done if two uses of sleep/wakeup accidentally
-choose the same channel: they will see spurious wakeups,
-but looping as described above will tolerate this problem.
-Much of the charm of sleep/wakeup is that it is both
-lightweight (no need to create special data
-structures to act as wait channels) and provides a layer
-of indirection (callers need not know which specific process
-they are interacting with).
-%% 
-\section{Code: Pipes}
-%% 
-xv6's pipes are an example of code that uses
+如果睡眠/唤醒 的两个使用意外选择了相同的通道：
+它们会看到虚假的唤醒，
+但如上所述的循环将容忍这个问题。
+睡眠/唤醒 的大部分魅力在于它既轻量级（不需要创建特殊的数据结构作为等待通道）
+又提供了一层间接（调用者不需要知道它们正在与哪个特定进程交互）。
+%%
+\section{代码：管道}
+%%
+xv6 的管道是使用
 \lstinline{sleep}
-and \lstinline{wakeup} to synchronize producers and
-consumers.
-We saw the interface for pipes in Chapter~\ref{CH:UNIX}:
-bytes written to one end of a pipe are copied
-to an in-kernel buffer and then can be read from
-the other end of the pipe.
-Future chapters will examine the file descriptor support
-surrounding pipes, but let's look now at the
-implementations of 
+和 \lstinline{wakeup} 来同步生产者和消费者的代码示例。
+我们在第~\ref{CH:UNIX} 章看到了管道的接口：
+写入管道一端的数据被复制到内核缓冲区，
+然后可以从管道的另一端读取。
+后续章节将检查围绕管道的文件描述符支持，
+但现在让我们看看
 \indexcode{pipewrite}
-and
-\indexcode{piperead}.
+和
+\indexcode{piperead}
+的实现。
 
-Each pipe
-is represented by a 
-\indexcode{struct pipe},
-which contains
-a 
+每个管道由
+\indexcode{struct pipe}
+表示，它包含一个
 \lstinline{lock}
-and a 
+和一个
 \lstinline{data}
-buffer.
-The fields
+缓冲区。
+字段
 \lstinline{nread}
-and
+和
 \lstinline{nwrite}
-count the total number of bytes read from
-and written to the buffer.
-The buffer wraps around:
-the next byte written after
+计数从缓冲区读取和写入的字节总数。
+缓冲区环绕：
+在
 \lstinline{buf[PIPESIZE-1]}
-is 
-\lstinline{buf[0]}.
-The counts do not wrap.
-This convention lets the implementation
-distinguish a full buffer 
+之后写入的下一个字节是
+\lstinline{buf[0]}。
+计数不环绕。
+这种约定让实现能够区分满缓冲区
 (\lstinline{nwrite}
 \lstinline{==}
 \lstinline{nread+PIPESIZE})
-from an empty buffer
+和空缓冲区
 (\lstinline{nwrite}
 \lstinline{==}
-\lstinline{nread}),
-but it means that indexing into the buffer
-must use
+\lstinline{nread})，
+但它意味着索引到缓冲区时必须使用
 \lstinline{buf[nread}
 \lstinline{%}
 \lstinline{PIPESIZE]}
-instead of just
-\lstinline{buf[nread]} 
-(and similarly for
-\lstinline{nwrite}).
+而不是仅仅
+\lstinline{buf[nread]}
+（对
+\lstinline{nwrite}
+同样如此）。
 
-Let's suppose that calls to
+假设对
 \lstinline{piperead}
-and
+和
 \lstinline{pipewrite}
-happen simultaneously on two different CPUs.
+的调用同时在两个不同的 CPU 上发生。
 \lstinline{pipewrite}
 \lineref{kernel/pipe.c:/^pipewrite/}
-begins by acquiring the pipe's lock, which
-protects the counts, the data, and their
-associated invariants.
+首先获取管道的锁，该锁保护计数、数据和它们相关的
+不变量。
 \lstinline{piperead}
 \lineref{kernel/pipe.c:/^piperead/}
-then tries to acquire the lock too, but cannot.
-It spins in
+然后也尝试获取锁，但无法获取。
+它在
 \lstinline{acquire}
 \lineref{kernel/spinlock.c:/^acquire/}
-waiting for the lock.
-While
+中自旋等待锁。
+在
 \lstinline{piperead}
-waits,
+等待时，
 \lstinline{pipewrite}
-loops over the bytes being written
-(\lstinline{addr[0..n-1]}),
-adding each to the pipe in turn
-\lineref{kernel/pipe.c:/nwrite\+\+/}.
-During this loop, it could happen that
-the buffer fills
-\lineref{kernel/pipe.c:/DOC: pipewrite-full/}.
-In this case, 
+循环遍历要写入的字节
+(\lstinline{addr[0..n-1]})，
+依次将每个字节添加到管道中
+\lineref{kernel/pipe.c:/nwrite\+\+/}。
+在这个循环期间，缓冲区可能填满
+\lineref{kernel/pipe.c:/DOC: pipewrite-full/}。
+在这种情况下，
 \lstinline{pipewrite}
-calls
+调用
 \lstinline{wakeup}
-to alert any sleeping readers to the fact
-that there is data waiting in the buffer
-and then sleeps on
+来提醒任何睡眠的读取者缓冲区中有数据等待，
+然后在
 \lstinline{&pi->nwrite}
-to wait for a reader to take some bytes
-out of the buffer.
+上睡眠以等待读取者从缓冲区中取出一些字节。
 \lstinline{sleep}
-releases 
-the pipe's lock
-as part of putting
-\lstinline{pipewrite}'s
-process to sleep.
+释放管道锁作为将
+\lstinline{pipewrite}
+的进程置于睡眠的一部分。
 
 \lstinline{piperead}
-now acquires the pipe's lock and enters its critical section:
-it finds that
+现在获取管道锁并进入其临界区：
+它发现
 \lstinline{pi->nread}
 \lstinline{!=}
 \lstinline{pi->nwrite}
 \lineref{kernel/pipe.c:/DOC: pipe-empty/}
 (\lstinline{pipewrite}
-went to sleep because
+进入睡眠是因为
 \lstinline{pi->nwrite}
 \lstinline{==}
 \lstinline{pi->nread}
 \lstinline{+}
 \lstinline{PIPESIZE}
-\lineref{kernel/pipe.c:/pipewrite-full/}),
-so it falls through to the 
+\lineref{kernel/pipe.c:/pipewrite-full/})，
+因此它进入
 \lstinline{for}
-loop, copies data out of the pipe
-\lineref{kernel/pipe.c:/DOC: piperead-copy/},
-and increments 
+循环，从管道中复制数据
+\lineref{kernel/pipe.c:/DOC: piperead-copy/}，
+并将
 \lstinline{nread}
-by the number of bytes copied.
-That much space in the buffer is now available for writing, so
+增加复制的字节数。
+缓冲区中的那么多空间现在可用于写入，因此
 \lstinline{piperead}
-calls
+调用
 \lstinline{wakeup}
 \lineref{kernel/pipe.c:/DOC: piperead-wakeup/}
-to wake any sleeping writers
-before it returns.
+来唤醒任何睡眠的写入者，然后返回。
 \lstinline{wakeup}
-finds a process sleeping on
-\lstinline{&pi->nwrite},
-the process that was running
+找到一个在
+\lstinline{&pi->nwrite}
+上睡眠的进程，
+该进程正在运行
 \lstinline{pipewrite}
-but stopped when the buffer filled.
-It marks that process as
-\indexcode{RUNNABLE}.
+但在缓冲区填满时停止了。
+它将该进程标记为
+\indexcode{RUNNABLE}。
 
-The pipe code uses separate wait channels for reader and writer
+管道代码为读取者和写入者使用单独的等待通道
 (\lstinline{pi->nread}
-and
-\lstinline{pi->nwrite});
-this might make the system more efficient in the unlikely
-event that there are lots of
-readers and writers waiting for the same pipe.
-The pipe code sleeps inside a loop checking the
-sleep condition; if there are multiple readers
-or writers, all but the first process to wake up
-will see the condition is false and sleep again.
-%% 
-\section{Code: Wait, exit, and kill}
+和
+\lstinline{pi->nwrite})；
+这在不太可能有大量读取者和写入者等待同一管道的情况下可能使系统更高效。
+管道代码在检查睡眠条件的循环内睡眠；
+如果有多个读取者或写入者，除第一个唤醒的进程外，所有其他进程将看到条件为假并再次睡眠。
+%%
+\section{代码：Wait、exit 和 kill}
 
-Please read the code for functions {\tt kwait()}, {\tt kexit()},
-and {\tt kkill()} in {\tt kernel/proc.c}; these are the
-internal implementations of the corresponding system calls.
+请阅读 {\tt kernel/proc.c} 中函数 {\tt kwait()}、{\tt kexit()}
+和 {\tt kkill()} 的代码；这些是对应系统调用的内部实现。
 
-%% 
+%%
 \lstinline{sleep}
-and
+和
 \lstinline{wakeup}
-can be used for many kinds of waiting.
-An interesting example, introduced in Chapter~\ref{CH:UNIX},
-is the interaction between a child's \indexcode{exit}
-and its parent's \indexcode{wait}.
-At the time of the child's death, the parent may already
-be sleeping in {\tt wait}, or may be doing something else;
-in the latter case, a subsequent call to {\tt wait} must
-observe the child's death, perhaps long after it calls {\tt exit}.
-The way that xv6 records the child's demise until {\tt wait}
-observes it is for {\tt exit} to put the caller into the \indexcode{ZOMBIE}
-state, where it stays until the parent's {\tt wait} notices it, changes
-the child's state to {\tt UNUSED}, copies the child's exit status,
-and returns the child's process ID to the parent.
-If the parent exits before the child, the 
-parent gives the child to the
+可用于许多类型的等待。
+第~\ref{CH:UNIX} 章介绍了一个有趣的例子，
+即子进程 \indexcode{exit}
+与其父进程 \indexcode{wait} 之间的交互。
+在子进程死亡时，父进程可能已经在 {\tt wait} 中睡眠，
+或者可能在做其他事情；
+在后一种情况下，后续对 {\tt wait} 的调用必须观察子进程的死亡，
+可能在调用 {\tt exit} 很久之后。
+Xv6 记录子进程死亡直到 {\tt wait} 观察到它的方式是 {\tt exit} 将调用者放入 \indexcode{ZOMBIE}
+状态，在那里保持直到父进程的 {\tt wait} 注意到它，将子进程的状态更改为 {\tt UNUSED}，
+复制子进程的退出状态，并将子进程的进程 ID 返回给父进程。
+如果父进程在子进程之前退出，
+父进程将子进程交给
 \lstinline{init}
-process, which perpetually calls {\tt wait};
-thus
-every child has a parent to clean up after it.
-A challenge is
-to avoid races and deadlock between
-simultaneous parent 
+进程，该进程永久调用 {\tt wait}；
+因此每个子进程都有一个父进程来清理它。
+一个挑战是避免同时父进程
 \lstinline{wait}
-and child
-\lstinline{exit},
-as well as simultaneous
-\lstinline{exit} and \lstinline{exit}.
+和子进程
+\lstinline{exit}
+之间的竞争和死锁，
+以及同时
+\lstinline{exit} 和 \lstinline{exit} 之间的竞争。
 
-\lstinline{kwait}, the kernel implementation
-for {\tt wait}, starts by acquiring
+\lstinline{kwait}，{\tt wait} 的内核实现，首先获取
 \lstinline{wait_lock}
-\lineref{kernel/proc.c:/^kwait/},
-which acts as the condition
-lock that helps ensure that \lstinline{kwait} doesn't miss a \lstinline{wakeup}
-from an exiting child.
-Then \lstinline{kwait} scans the process table.
-If it finds a child in \texttt{ZOMBIE} state,
-it frees that child's resources and
-its \lstinline{proc} structure, copies
-the child's exit status to the address supplied to \lstinline{wait}
-(if it is not 0),
-and returns the child's process ID.
-If 
+\lineref{kernel/proc.c:/^kwait/}，
+它作为条件锁有助于确保 \lstinline{kwait} 不会错过来自退出子进程的 \lstinline{wakeup}。
+然后 \lstinline{kwait} 扫描进程表。
+如果它找到处于 \texttt{ZOMBIE} 状态的子进程，
+它释放该子进程的资源和其 \lstinline{proc} 结构体，
+将子进程的退出状态复制到提供给 \lstinline{wait} 的地址
+（如果不是 0），
+并返回子进程的进程 ID。
+如果
 \lstinline{kwait}
-finds children but none have exited,
-it calls
+找到子进程但没有一个退出，
+它调用
 \lstinline{sleep}
-to wait for any of them to exit
-\lineref{kernel/proc.c:/DOC: wait-sleep/},
-then scans again.
-\lstinline{kwait} often holds two locks,
-\lstinline{wait_lock} and some process's \lstinline{pp->lock};
-the deadlock-avoiding order is first \lstinline{wait_lock}
-and then \lstinline{pp->lock}.
+等待它们中的任何一个退出
+\lineref{kernel/proc.c:/DOC: wait-sleep/}，
+然后再次扫描。
+\lstinline{kwait} 经常持有两个锁，
+\lstinline{wait_lock} 和某个进程的 \lstinline{pp->lock}；
+避免死锁的顺序是先 \lstinline{wait_lock} 然后 \lstinline{pp->lock}。
 
-\lstinline{kexit} \lineref{kernel/proc.c:/^kexit/} records the exit
-status, frees some resources, calls \lstinline{reparent} to give any
-children to the \lstinline{init} process, wakes up the parent in case
-it is in \lstinline{wait}, marks the caller as a zombie, and
-permanently yields the CPU. \lstinline{kexit} holds both
-\lstinline{wait_lock} and \lstinline{p->lock} during this
-sequence.
-It holds \lstinline{wait_lock} because 
-it's the condition
-lock for the \lstinline{wakeup(p->parent)}, preventing a parent in
-\lstinline{wait} from losing the wakeup. \lstinline{kexit} must hold
-\lstinline{p->lock} for this sequence also, to prevent a parent in
-\lstinline{wait} from seeing that the child is in state
-\lstinline{ZOMBIE} before the child has finally called
-\lstinline{swtch}. \lstinline{kexit} acquires these locks in
-the same order as \lstinline{kwait} to avoid deadlock.
+\lstinline{kexit} \lineref{kernel/proc.c:/^kexit/} 记录退出状态，
+释放一些资源，调用 \lstinline{reparent} 将任何子进程交给 \lstinline{init} 进程，
+唤醒父进程以防它在 \lstinline{wait} 中，将调用者标记为僵尸，并永久让出 CPU。
+\lstinline{kexit} 在此过程中持有
+\lstinline{wait_lock} 和 \lstinline{p->lock}。
+它持有 \lstinline{wait_lock} 因为它是
+\lstinline{wakeup(p->parent)} 的条件锁，防止在 \lstinline{wait} 中的父进程丢失唤醒。
+\lstinline{kexit} 还必须为此序列持有
+\lstinline{p->lock}，以防止在 \lstinline{wait} 中的父进程在子进程最终调用
+\lstinline{swtch} 之前看到子进程处于状态
+\lstinline{ZOMBIE}。
+\lstinline{kexit} 以与 \lstinline{kwait} 相同的顺序获取这些锁以避免死锁。
 
-It may look incorrect for \lstinline{kexit} to wake up the parent
-before setting its state to \lstinline{ZOMBIE}, 
-but that is safe:
-although
+\lstinline{kexit} 在将其状态设置为 \lstinline{ZOMBIE} 之前唤醒父进程
+可能看起来不正确，
+但这是安全的：
+尽管
 \lstinline{wakeup}
-may cause the parent to run,
-the loop in the parent's
+可能导致父进程运行，
+但父进程的
 \lstinline{kwait}
-cannot examine the child until the child's
+中的循环在子进程的
 \lstinline{p->lock}
-is released by {\tt scheduler},
-so
+被 {\tt scheduler} 释放之前无法检查子进程，
+因此
 \lstinline{kwait}
-can't look at
-the exiting process until after
+不能在
 \lstinline{kexit}
-has set its state to
+将其状态设置为
 \lstinline{ZOMBIE}
-\lineref{kernel/proc.c:/state.=.ZOMBIE/}.
+之前查看退出进程
+\lineref{kernel/proc.c:/state.=.ZOMBIE/}。
 
-While
-\lstinline{exit} 
-allows a process to terminate itself,
-the \lstinline{kill} system call
-\lineref{kernel/proc.c:/^kkill/} 
-lets one process request that another terminate.
-It would be too complex for
+虽然
+\lstinline{exit}
+允许进程终止自己，
+但 \lstinline{kill} 系统调用
+\lineref{kernel/proc.c:/^kkill/}
+让一个进程请求另一个进程终止。
 \lstinline{kill}
-to directly destroy the victim process, since the victim
-might be executing on another CPU, perhaps
-in the middle of a sensitive sequence of updates to kernel data structures.
-Thus
+直接销毁受害者进程会太复杂，因为受害者
+可能在另一个 CPU 上执行，
+可能正在更新内核数据结构的关键序列的中间。
+因此
 \lstinline{kkill}
-does very little: it just sets the victim's
+做得很少：它只是设置受害者的
 \indexcode{p->killed}
-and, if it is sleeping, wakes it up.
-Eventually the victim will enter or leave the kernel,
-at which point code in
+并且，如果它正在睡眠，就唤醒它。
+最终受害者将进入或离开内核，
+此时
 \lstinline{usertrap}
-will call
+中的代码将调用
 \lstinline{kexit}
-if
+如果
 \lstinline{p->killed}
-is set
-(it checks by calling
+被设置
+（它通过调用
 \lstinline{killed}
-\lineref{kernel/proc.c:/^killed/}).
-If the victim is running in user space, it will 
-see that it has been killed the next time it enters
-the kernel by making a system call or because the timer (or
-some other device) interrupts.
+\lineref{kernel/proc.c:/^killed/}
+来检查）。
+如果受害者在用户空间运行，它将在下次进入内核时看到它已被终止，
+通过进行系统调用或因为定时器（或其他设备）中断。
 
-If the victim process is in
-\lstinline{sleep},
-\lstinline{kkill}'s call to
+如果受害者进程在
+\lstinline{sleep}
+中，
+\lstinline{kkill} 对
 \lstinline{wakeup}
-will cause the victim to return from
-\lstinline{sleep}.
-This is potentially dangerous because 
-the condition being waited for may not be true.
-However, xv6 calls to
+的调用将导致受害者从
 \lstinline{sleep}
-are always wrapped in a
+返回。
+这有潜在危险，因为正在等待的条件可能不为真。
+然而，xv6 对
+\lstinline{sleep}
+的调用总是包装在一个在
+\lstinline{sleep}
+返回后重新测试条件的
 \lstinline{while}
-loop that re-tests the condition after
+循环中。
+一些对
 \lstinline{sleep}
-returns.
-Some calls to
+的调用也在循环中测试
+\lstinline{p->killed}，
+如果设置则放弃当前活动。
+这仅在放弃是正确的情况下才会这样做。
+例如，管道读取和写入代码
+\lineref{kernel/pipe.c:/killed.pr/}
+如果设置了终止标志则返回；最终代码将返回到 trap，trap 将再次检查 \lstinline{p->killed} 并退出。
+
+一些 xv6
 \lstinline{sleep}
-also test
+循环不检查
 \lstinline{p->killed}
-in the loop, and abandon the current activity if it is set.
-This is only done when such abandonment would be correct.
-For example, the pipe read and write code
-\lineref{kernel/pipe.c:/killed.pr/} 
-returns if the killed flag is set; eventually the
-code will return back to trap, which will again
-check \lstinline{p->killed} and exit.
-
-Some xv6 
-\lstinline{sleep}
-loops do not check
-\lstinline{p->killed} 
-because the code is in the middle of a multi-step
-system call that should be atomic (i.e., would be
-incorrect if abandoned midway through).
-The virtio driver
-\lineref{kernel/virtio\_disk.c:/sleep.b/} 
-is an example: it does not check
+因为代码处于多步系统调用的中间，应该是原子的（即，如果中途放弃会不正确）。
+Virtio 驱动程序
+\lineref{kernel/virtio\_disk.c:/sleep.b/}
+是一个例子：它不检查
 \lstinline{p->killed}
-because a disk operation may be one of a set of
-writes that are all needed in order for the file system to
-be left in a correct state.
-A process that is killed while waiting for disk I/O won't
-exit until it completes the current system call and
-\lstinline{usertrap} sees the killed flag.
+因为磁盘操作可能是一组写入中的一部分，所有这些写入都需要才能使文件系统保持正确状态。
+在磁盘 I/O 上等待时被终止的进程直到完成当前系统调用并且
+\lstinline{usertrap} 看到终止标志才会退出。
 
-\section{Process Locking}
+\section{进程锁}
 
-The lock associated with each process (\lstinline{p->lock}) is the
-most complex lock in xv6.
-A simple way to think about \lstinline{p->lock} is
-that it must be held while reading or writing any of the following
-\lstinline{struct proc} fields:
-\lstinline{p->state},
-\lstinline{p->chan},
-\lstinline{p->killed},
-\lstinline{p->xstate},
-and
-\lstinline{p->pid}.
-These fields can be used by other processes, or by scheduler
-threads on other CPUs, so it's natural that they
-must be protected by a lock.
+与每个进程关联的锁（\lstinline{p->lock}）是 xv6 中最复杂的锁。
+理解 \lstinline{p->lock} 的一个简单方法是，
+在读取或写入以下任何 \lstinline{struct proc} 字段时必须持有它：
+\lstinline{p->state}、
+\lstinline{p->chan}、
+\lstinline{p->killed}、
+\lstinline{p->xstate}、
+和
+\lstinline{p->pid}。
+这些字段可以被其他进程使用，或被其他 CPU 上的调度器线程使用，
+因此它们自然必须由锁保护。
 
-However, most uses of \lstinline{p->lock} are protecting higher-level
-invariants of xv6's process data structures and algorithms. Here's
-the full set of things that \lstinline{p->lock} does:
+然而，\lstinline{p->lock} 的大多数使用是保护 xv6 进程数据结构和算法的更高级别不变量。
+以下是 \lstinline{p->lock} 所做的全部事情：
 
-% it's hard to know how to phrase these things in a uniform way.
-% should the discussion be about invariants? protecting data? avoiding
-% races? ensuring atomicity? avoiding a specific danger?
+% 很难知道如何以统一的方式表述这些事情。
+% 讨论应该围绕不变量？保护数据？避免竞争？确保原子性？避免特定危险？
 
-% the "atomic" phrasing often doesn't really say what the danger is.
+% "原子"表述通常不能真正说明危险是什么。
 
 \begin{itemize}
 
-\item Along with \lstinline{p->state}, it prevents races in allocating
-  \lstinline{proc[]} slots for new processes.
-% makes check for UNUSED atomic with allocation (or something).
+\item 与 \lstinline{p->state} 一起，它防止在为新进程分配
+  \lstinline{proc[]} 槽时的竞争。
+% 使对 UNUSED 的检查与分配（或其他）原子化。
 
-\item It conceals a process from view while it is being created
-or destroyed.
-% makes all the steps of allocation, and destruction, atomic.
+\item 它在进程被创建或销毁时将其隐藏起来。
+% 使分配的所有步骤和销毁原子化。
 
-\item It prevents a parent's \lstinline{wait} from collecting a
-process that has set its state to \lstinline{ZOMBIE} but has
-not yet yielded the CPU.
-% it atomicizes the setting of the state to ZOMIE and the yielding
-% of the CPU.
+\item 它防止父进程的 \lstinline{wait} 收集一个已将其状态设置为 \lstinline{ZOMBIE} 但尚未让出 CPU 的进程。
+% 它将设置状态为 ZOMIE 和让出 CPU 原子化。
 
-\item It prevents another CPU's scheduler from deciding to run
-a yielding process after it sets its state to \lstinline{RUNNABLE} but
-before it finishes \lstinline{swtch}.
-% it atomizes the setting of p->state and swtch().
+\item 它防止另一个 CPU 的调度器决定在进程将其状态设置为 \lstinline{RUNNABLE} 之后但在完成 \lstinline{swtch} 之前运行一个让出的进程。
+% 它将设置 p->state 和 swtch() 原子化。
 
-\item It ensures that only one CPU's scheduler decides to run a
-  \lstinline{RUNNABLE} processes.
-% it atomicizes a scheduler's check for RUNNABLE and actually
-% running the process. or setting state to RUNNING.
+\item 它确保只有一个 CPU 的调度器决定运行一个
+  \lstinline{RUNNABLE} 进程。
+% 它将调度器对 RUNNABLE 的检查与实际运行进程（或设置状态为 RUNNING）原子化。
 
-\item It prevents a timer interrupt from causing a process to
-yield while it is in \lstinline{swtch}.
-% it makes swtch (or really the whole sequence) atomic w.r.t. timer interrupts
+\item 它防止定时器中断导致进程在 \lstinline{swtch} 中时让出。
+% 它使 swtch（或实际上是整个序列）相对于定时器中断原子化
 
-\item Along with the condition lock, it helps prevent \lstinline{wakeup}
-from overlooking a process that is calling \lstinline{sleep} but has not
-finished yielding the CPU.
-% avoids a race between conditionCheck+sleep and wakeup?
-% makes condition check atomic with yield?
+\item 与条件锁一起，它有助于防止 \lstinline{wakeup}
+忽略一个正在调用 \lstinline{sleep} 但尚未完成让出 CPU 的进程。
+% 避免 conditionCheck+sleep 和 wakeup 之间的竞争？
+% 使条件检查与让出原子化？
 
-\item It prevents the victim process of \lstinline{kill} from exiting
-and perhaps being re-allocated between \lstinline{kkill}'s check of 
-\lstinline{p->pid} and setting \lstinline{p->killed}.
-% it makes the pid check atomic with setting killed.
+\item 它防止 \lstinline{kill} 的受害者进程在 \lstinline{kkill} 检查
+  \lstinline{p->pid} 和设置 \lstinline{p->killed} 之间退出并可能被重新分配。
+% 它使 pid 检查与设置 killed 原子化。
 
-\item It makes \lstinline{kkill}'s check and write of \lstinline{p->state}
-atomic.
+\item 它使 \lstinline{kkill} 对 \lstinline{p->state} 的检查和写入原子化。
 
 \end{itemize}
 
 
-The \lstinline{p->parent} field is protected by the global lock
-\lstinline{wait_lock} rather than by \lstinline{p->lock}.
-Only a process's parent modifies \lstinline{p->parent}, though
-the field is read both by the process itself and by other
-processes searching for their children. The purpose of 
-\lstinline{wait_lock} is to act as the condition lock when
-\lstinline{wait} sleeps waiting for any child to exit. An
-exiting child holds either \lstinline{wait_lock} or \lstinline{p->lock}
-until after it has set its state to \lstinline{ZOMBIE}, woken
-up its parent, and yielded the CPU. \lstinline{wait_lock} also
-serializes concurrent \lstinline{exit}s by a parent and child,
-so that the \lstinline{init} process (which inherits the child)
-is guaranteed to be woken up from its \lstinline{wait}.
-\lstinline{wait_lock} is a global lock rather than a per-process
-lock in each parent, because, until a process acquires it,
-it cannot know who its parent is.
+\lstinline{p->parent} 字段由全局锁
+\lstinline{wait_lock} 而不是 \lstinline{p->lock} 保护。
+只有进程的父进程修改 \lstinline{p->parent}，
+尽管该字段被进程本身和其他寻找其子进程的进程读取。
+\lstinline{wait_lock} 的目的是作为条件锁，当
+\lstinline{wait} 睡眠等待任何子进程退出时。
+退出的子进程在将其状态设置为 \lstinline{ZOMBIE}、唤醒其父进程并让出 CPU 之后持有
+\lstinline{wait_lock} 或 \lstinline{p->lock}。
+\lstinline{wait_lock} 还序列化父进程和子进程的并发
+\lstinline{exit}，
+以便 \lstinline{init} 进程（继承子进程）
+保证从其 \lstinline{wait} 中被唤醒。
+\lstinline{wait_lock} 是全局锁而不是每个父进程的锁，
+因为，直到进程获取它之前，它不知道其父进程是谁。
 
-%% 
-\section{Real world}
-%% 
+%%
+\section{现实世界}
+%%
 
 \lstinline{sleep}
-and
+和
 \lstinline{wakeup}
-are a simple and effective synchronization method,
-but there are many others;
-semaphores~\cite{dijkstra65} are an example.
-The first challenge in all of them is to
-avoid the ``lost wakeups'' problem we saw at the
-beginning of the chapter.
-The original Unix kernel's
+是一种简单有效的同步方法，
+但还有许多其他方法；
+信号量~
+\cite{dijkstra65}
+是一个例子。
+所有这些方法的第一个挑战是避免我们在本章开头看到的``丢失唤醒''问题。
+原始 Unix 内核的
 \lstinline{sleep}
-simply disabled interrupts,
-which sufficed because Unix ran on a single-CPU system.
-Because xv6 runs on multiprocessors,
-it adds an explicit lock to
-\lstinline{sleep}.
-FreeBSD's
+只是禁用中断，
+这就足够了，因为 Unix 运行在单 CPU 系统上。
+因为 xv6 运行在多处理器上，
+它向
+\lstinline{sleep}
+添加了一个显式锁。
+FreeBSD 的
 \lstinline{msleep}
-takes the same approach.
-Plan 9's 
+采用相同的方法。
+Plan 9 的
 \lstinline{sleep}
-uses a callback function that runs with the scheduling
-lock held just before going to sleep;
-the function serves as a last-minute check
-of the sleep condition, to avoid lost wakeups.
-The Linux kernel's
+使用一个在即将睡眠之前持有调度锁运行的回调函数；
+该函数作为睡眠条件的最后检查，以避免丢失唤醒。
+Linux 内核的
 \lstinline{sleep}
-uses an explicit process queue, called a wait queue, instead of
-a wait channel; the queue has its own internal lock.
+使用显式的进程队列，称为等待队列，而不是等待通道；该队列有自己的内部锁。
 
-Scanning the entire set of processes in
+在
 \lstinline{wakeup}
-is inefficient.  A better solution is to
-replace the
+中扫描整个进程集是低效的。
+更好的解决方案是将
+\lstinline{sleep}
+和
+\lstinline{wakeup}
+中的
 \lstinline{chan}
-in both
+替换为一个保存该结构上睡眠进程列表的数据结构，
+如 Linux 的等待队列。
+Plan 9 的
 \lstinline{sleep}
-and
+和
 \lstinline{wakeup}
-with a data structure that holds
-a list of processes sleeping on that structure,
-such as Linux's wait queue.
-Plan 9's
+将该结构称为会合点（rendezvous point）。
+许多线程库将相同的结构称为条件变量（condition variable）；
+在这种情况下，操作
 \lstinline{sleep}
-and
+和
 \lstinline{wakeup}
-call that structure a rendezvous point.
-Many thread libraries refer to the same
-structure as a condition variable;
-in that context, the operations
-\lstinline{sleep}
-and
-\lstinline{wakeup}
-are called
+称为
 \lstinline{wait}
-and
-\lstinline{signal}.
-All of these mechanisms share the same
-flavor: the sleep condition is protected by
-some kind of lock dropped atomically during sleep.
+和
+\lstinline{signal}。
+所有这些机制都有相同的特点：睡眠条件由某种在睡眠期间原子丢弃的锁保护。
 
-xv6's
+xv6 的
 \lstinline{wakeup}
-wakes up all processes that are waiting on a particular wait channel.
-If there are more than one of them, they will all try to acquire
-the condition lock and re-check the condition; in many cases only
-one will be able to do anything useful (e.g., read all the
-data waiting in a pipe). The rest will find
-the condition is no longer true and go back to sleep;
-it was a waste of CPU time to wake them up.
-As a result,
-most condition variable designs provide two primitives:
-\lstinline{signal},
-which wakes up one of the processes waiting for the condition variable, and
-\lstinline{broadcast},
-which wakes up all of them.
+唤醒所有在特定等待通道上等待的进程。
+如果有多个，它们都将尝试获取条件锁并重新检查条件；
+在许多情况下只有一个能够做有用的事情（例如，读取管道中等待的所有数据）。
+其余的将发现条件不再为真并返回睡眠；
+唤醒它们是浪费 CPU 时间。
+因此，
+大多数条件变量设计提供两个原语：
+\lstinline{signal}，
+唤醒等待条件变量的进程之一，和
+\lstinline{broadcast}，
+唤醒它们所有。
 
-Forcibly killing processes poses some problems.
-For example, a killed
-process may be deep inside the kernel sleeping, and unwinding its
-stack requires care, since each function on the call stack
-may need to do some clean-up.  Some languages help out by providing
-an exception mechanism, but not C.
-Furthermore, there are other events that can cause a sleeping process to be
-woken up, even though the event it is waiting for has not happened yet.  For
-example, when a Unix process is sleeping, another process may send a 
-\indexcode{signal}
-to it.  In this case, the
-process will return from the interrupted system call with the value -1 and with
-the error code set to EINTR. The application can check for these values and
-decide what to do.  Xv6 doesn't support signals and this complexity doesn't arise.
+强制终止进程带来一些问题。
+例如，被终止的进程可能在内核深处睡眠，
+展开其堆栈需要小心，因为调用堆栈上的每个函数可能需要做一些清理。
+一些语言通过提供异常机制来帮助，但 C 没有。
+此外，还有其他事件可以导致睡眠进程被唤醒，
+即使它等待的事件尚未发生。
+例如，当 Unix 进程睡眠时，另一个进程可能向它发送
+\indexcode{signal}。
+在这种情况下，进程将从被中断的系统调用返回，值为 -1 且错误代码设置为 EINTR。
+应用程序可以检查这些值并决定做什么。
+Xv6 不支持信号，这种复杂性不会出现。
 
-Xv6's support for
+Xv6 对
 \lstinline{kill}
-is not entirely satisfactory: there are sleep loops
-which probably should check for
-\lstinline{p->killed}.
-A related problem is that, even for 
+的支持不完全令人满意：有些睡眠循环可能应该检查
+\lstinline{p->killed}。
+一个相关的问题是，即使对于检查
+\lstinline{p->killed}
+的
 \lstinline{sleep}
-loops that check
-\lstinline{p->killed},
-there is a race between 
+循环，
 \lstinline{sleep}
-and
-\lstinline{kill};
-the latter may set
+和
+\lstinline{kill}
+之间也存在竞争；
+后者可能设置
 \lstinline{p->killed}
-and try to wake up the victim just after the victim's loop
-checks
+并尝试唤醒受害者，就在受害者的循环检查
 \lstinline{p->killed}
-but before it calls
-\lstinline{sleep}.
-If this problem occurs, the victim won't notice the
-\lstinline{p->killed}
-until the condition it is waiting for occurs. This may be quite a bit later
-or even never
-(e.g., if the victim is waiting for input from the console, but the user
-doesn't type any input).
+但在其调用
+\lstinline{sleep}
+之前。
+如果发生这个问题，受害者直到它等待的条件发生才会注意到
+\lstinline{p->killed}。
+这可能很久之后或永远不会
+（例如，如果受害者正在等待控制台的输入，但用户没有键入任何输入）。
 
-%% 
-\section{Exercises}
-%% 
+%%
+\section{练习}
+%%
 
 \begin{enumerate}
 
-\item Implement counting semaphores in xv6.
-Choose a few of xv6's uses of sleep and wakeup and
-replace them with semaphores.
-Judge the result.
+\item 在 xv6 中实现计数信号量。
+选择 xv6 的一些睡眠和唤醒用法并用信号量替换它们。
+评判结果。
 
-\item Can you implement a variant of {\tt sleep()} that
-takes just one argument, the channel, and doesn't need
-a lock argument?
+\item 你能实现一个只带一个参数的 {\tt sleep()} 变体吗，即通道，不需要锁参数？
 
-\item Fix the race mentioned above between
+\item 修复上面提到的
 \lstinline{kill}
-and 
-\lstinline{sleep},
-so that a
-\lstinline{kill}
-that occurs after the victim's sleep loop checks
-\lstinline{p->killed}
-but before it calls
+和
 \lstinline{sleep}
-results in the victim abandoning the current system call.
-% Answer: a solution is to check in sleep if p->killed is set before setting
-% the processes's state to sleep. 
-
-\item Design a plan so that every sleep loop checks 
+之间的竞争，
+使得在受害者的睡眠循环检查
 \lstinline{p->killed}
-so that, for example, a process that is in the virtio driver can return quickly from the while loop
-if it is killed by another process.
-% Answer: this is difficult.  Moderns Unixes do this with setjmp and longjmp and very carefully programming to clean any partial state that the interrupted systems call may have built up.
+之后但在调用
+\lstinline{sleep}
+之前发生的
+\lstinline{kill}
+导致受害者放弃当前系统调用。
+% 答案：一个解决方案是在设置进程状态为睡眠之前在 sleep 中检查 p->killed 是否已设置。
+
+\item 设计一个计划，使每个睡眠循环都检查
+\lstinline{p->killed}
+，以便例如，在 virtio 驱动程序中的进程如果被另一个进程终止，可以从 while 循环快速返回。
+% 答案：这很困难。现代 Unix 使用 setjmp 和 longjmp 以及非常仔细的编程来清理被中断系统调用可能已建立的任何部分状态。
 
 \end{enumerate}
