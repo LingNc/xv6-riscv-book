@@ -1,307 +1,133 @@
-\chapter{Traps and system calls}
+\chapter{陷入和系统调用}
 \label{CH:TRAP}
 
-There are three kinds of event which cause the CPU to set
-aside ordinary execution of instructions and force a
-transfer of control to special kernel code that handles the event. One
-situation is a system call, when a user program 
-executes the {\tt ecall} instruction to ask the kernel to do 
-something for it. Another situation is an \indextext{exception}:
-an instruction (user or kernel) does something illegal, such as 
-load from an invalid virtual address. The third situation is a
-device \indextext{interrupt}, when a device signals that it needs
-attention, for example when the disk hardware finishes a read or write
-request.
+有三种事件会导致 CPU 放弃指令的普通执行，并强制将控制权转移到处理该事件的特殊内核代码。一种情况是系统调用，当用户程序执行 {\tt ecall} 指令请求内核为它做某事时。另一种情况是 \indextext{exception}（异常）：指令（用户或内核）做了非法的事情，例如从无效的虚拟地址加载。第三种情况是设备 \indextext{interrupt}（中断），当设备发出需要关注的信号时，例如磁盘硬件完成读取或写入请求时。
 
-This book uses \indextext{trap} as a generic term for these
-situations. Typically whatever code was executing at the time of the
-trap will later need to resume, and shouldn't need to be aware that
-anything special happened. That is, we often want traps to be
-transparent; this is particularly important for device interrupts, which the
-interrupted code typically doesn't expect. 
-A trap forces a transfer of control into the kernel; the kernel saves
-registers and other state so that execution can be resumed; the kernel
-executes appropriate handler code (e.g., a system call implementation
-or device driver); the kernel restores the saved state and returns
-from the trap; and the original code resumes where it left off.
+本书使用 \indextext{trap}（陷入）作为这些情况的通用术语。通常，在陷入时执行的任何代码稍后都需要恢复，并且不需要意识到发生了什么特殊的事情。也就是说，我们经常希望陷入是透明的；这对于设备中断尤其重要，被中断的代码通常不期望中断。陷入强制将控制权转移到内核；内核保存寄存器和其他状态以便可以恢复执行；内核执行适当的处理程序代码（例如，系统调用实现或设备驱动）；内核恢复保存的状态并从陷入返回；原始代码从停止的地方继续执行。
 
-Xv6 handles all traps in the kernel; traps are not delivered to user
-code. Handling traps in the kernel is natural for system calls. It
-makes sense for interrupts since isolation demands that only the
-kernel be allowed to use devices,
-and because the kernel is able to
-share devices among multiple processes.
-It also makes sense for exceptions since the kernel may be able to
-handle the exception from user space (for an example see
-Chapter~\ref{CH:PGFAULTS}) or respond by killing the offending
-program.
+Xv6 在内核中处理所有陷入；陷入不会传递给用户代码。在内核中处理陷入对系统调用来说是自然的。对于中断来说这是有意义的，因为隔离要求只有内核才能使用设备，而且因为内核能够在多个进程之间共享设备。对于异常来说这也是有意义的，因为内核可能能够处理来自用户空间的异常（例如参见 Chapter~\ref{CH:PGFAULTS}）或通过杀死违规程序来响应。
 
-Xv6 trap handling proceeds in four stages: hardware actions taken by
-the RISC-V CPU, some assembly instructions that prepare the way for
-kernel C code, a C function that decides what to do with the trap,
-and the system call or device-driver service routine. While
-commonality among the three trap types suggests that a kernel could
-handle all traps with a single code path, it turns out to be
-convenient to have separate code for
-two distinct cases: traps from user space, and traps from kernel space.
-Kernel code (assembler or C) that
-processes a trap is often called a \indextext{handler};
-the first handler instructions are usually written in assembler
-(rather than C) and are sometimes called a \indextext{vector}.
+Xv6 陷入处理分为四个阶段：RISC-V CPU 采取的硬件操作、为内核 C 代码铺平道路的一些汇编指令、决定如何处理陷入的 C 函数，以及系统调用或设备驱动服务例程。虽然三种陷入类型之间的共性表明内核可以用单一代码路径处理所有陷入，但事实证明为两种不同情况设置单独的代码是方便的：来自用户空间的陷入和来自内核空间的陷入。处理陷入的内核代码（汇编或 C）通常称为 \indextext{handler}（处理程序）；第一条处理程序指令通常用汇编（而不是 C）编写，有时称为 \indextext{vector}（向量）。
 
-Before proceeding, please read {\tt kernel/trampoline.S},
-and {\tt usertrap()} and {\tt prepare\_return()} in {\tt kernel/trap.c}.
+在继续之前，请阅读 {\tt kernel/trampoline.S} 以及 {\tt kernel/trap.c} 中的 {\tt usertrap()} 和 {\tt prepare\_return()}。
 
-\section{RISC-V trap machinery}
+\section{RISC-V 陷入机制}
 
-Each RISC-V CPU has a set of hardware control registers that the kernel writes to
-tell the CPU how to handle traps, and that the kernel can read
-to find out about a trap that has occurred. The RISC-V documents
-contain the full story~\cite{riscv:priv}. {\tt riscv.h}
-\fileref{kernel/riscv.h} contains definitions that xv6 uses. Here's
-an outline of the most important registers:
+每个 RISC-V CPU 都有一组硬件控制寄存器，内核写入这些寄存器以告诉 CPU 如何处理陷入，并且内核可以读取这些寄存器以了解已发生的陷入。RISC-V 文档包含完整的故事~\cite{riscv:priv}。{\tt riscv.h}
+\fileref{kernel/riscv.h}
+包含 xv6 使用的定义。以下是最重要的寄存器的概述：
 
 \begin{itemize}
 
-\item \indexcode{stvec}: The kernel writes the address of its trap handler
-  code here; the RISC-V jumps to the address in {\tt stvec} to handle a trap.
+\item \indexcode{stvec}：内核在此处写入其陷入处理程序代码的地址；RISC-V 跳转到 {\tt stvec} 中的地址以处理陷入。
 
-\item \indexcode{sepc}: When a trap occurs, RISC-V saves the program counter
-  here (since the {\tt pc} is then overwritten with the
-  value in {\tt stvec}). The
-  {\tt sret} (return from trap) instruction copies {\tt sepc} to the
-  {\tt pc}. The kernel can write {\tt sepc} to control where {\tt
-    sret} goes.
+\item \indexcode{sepc}：当发生陷入时，RISC-V 在此处保存程序计数器（因为 {\tt pc} 随后被 {\tt stvec} 中的值覆盖）。{\tt sret}（从陷入返回）指令将 {\tt sepc} 复制到 {\tt pc}。内核可以写入 {\tt sepc} 以控制 {\tt sret} 的去向。
 
-\item \indexcode{scause}: RISC-V puts a number here that describes
-the reason for the trap.
+\item \indexcode{scause}：RISC-V 在此处放置一个数字，描述陷入的原因。
 
-\item \indexcode{sscratch}: The kernel trap handler code uses {\tt sscratch}
-  to help it avoid overwriting user registers before saving them.
+\item \indexcode{sscratch}：内核陷入处理程序代码使用 {\tt sscratch} 来帮助它在保存用户寄存器之前避免覆盖它们。
 
-\item \indexcode{sstatus}: The SIE bit in {\tt sstatus}
-  controls whether device interrupts
-  are enabled. If the kernel clears SIE, the RISC-V will defer
-  device interrupts until the kernel sets SIE. The SPP bit
-  indicates whether a trap came from user mode or supervisor
-  mode, and controls to what mode {\tt sret} returns.
+\item \indexcode{sstatus}：{\tt sstatus} 中的 SIE 位控制是否启用设备中断。如果内核清除 SIE，RISC-V 将推迟设备中断，直到内核设置 SIE。SPP 位指示陷入来自用户模式还是监管者模式，并控制 {\tt sret} 返回到哪种模式。
 
 \end{itemize}
 
-The above registers can only be accessed in supervisor mode (i.e., by
-the kernel); the CPU prevents user code from reading or writing them.
+上述寄存器只能在监管者模式下（即内核）访问；CPU 阻止用户代码读取或写入它们。
 
-Each CPU on a multi-core chip has its own set of these registers,
-and more than one CPU may be handling a trap at any given time.
+多核芯片上的每个 CPU 都有自己的一组这些寄存器，并且可能有多个 CPU 在任何给定时间处理陷入。
 
-When it forces a trap, the RISC-V hardware does the following:
+当 RISC-V 硬件强制陷入时，会执行以下操作：
 
 \begin{enumerate}
 
-\item If the trap is a device interrupt, and the {\tt sstatus} SIE bit
-  is clear, don't do any of the following.
+\item 如果陷入是设备中断，且 {\tt sstatus} 的 SIE 位被清除，则不执行以下任何操作。
 
-\item Disable interrupts by clearing the SIE bit in {\tt sstatus}.
+\item 通过清除 {\tt sstatus} 中的 SIE 位来禁用中断。
 
-\item Copy the {\tt pc} to {\tt sepc}.
+\item 将 {\tt pc} 复制到 {\tt sepc}。
 
-\item Save the current mode (user or supervisor) in the SPP bit in {\tt sstatus}.
+\item 将当前模式（用户或监管者）保存在 {\tt sstatus} 的 SPP 位中。
 
-\item Set {\tt scause} to a number indicating the trap's cause.
+\item 将 {\tt scause} 设置为一个表示陷入原因的数字。
 
-\item Set the mode to supervisor.
+\item 将模式设置为监管者模式。
 
-\item Copy {\tt stvec} to the {\tt pc}.
+\item 将 {\tt stvec} 复制到 {\tt pc}。
 
-\item Start executing at the new {\tt pc}.
+\item 开始在新的 {\tt pc} 处执行。
 
 \end{enumerate}
 
-The CPU doesn't switch to the kernel page table, doesn't
-switch to a stack in the kernel, and doesn't save any registers other
-than the {\tt pc}. Kernel software must perform these tasks.
-One reason that the CPU does minimal work during a trap is to provide
-flexibility to software; for example, some operating systems 
-omit a page table switch in some situations to increase
-trap performance.
+CPU 不会切换到内核页表，不会切换到内核中的栈，也不会保存除 {\tt pc} 之外的任何寄存器。内核软件必须执行这些任务。CPU 在陷入期间做最少工作的原因之一是为软件提供灵活性；例如，一些操作系统在某些情况下省略页表切换以提高陷入性能。
 
-It's worth thinking about whether any of the steps listed above could
-be omitted, perhaps in search of faster traps. Though there are
-situations in which a simpler sequence can work, many of the steps
-would be dangerous to omit in general. For example, suppose that the
-CPU didn't switch program counters. Then a trap from user space could
-switch to supervisor mode while still running user instructions. Those
-user instructions could break user/kernel isolation, for example
-by modifying the {\tt satp} register to point to a page table that
-allowed accessing all of physical memory. It is thus important that
-the CPU switch to a kernel-specified instruction address, namely {\tt
-  stvec}.
+值得思考的是，上面列出的任何步骤是否可以省略，也许是为了更快的陷入。虽然在某些情况下更简单的序列可以工作，但许多步骤在一般情况下省略是危险的。例如，假设 CPU 没有切换程序计数器。那么来自用户空间的陷入可能会在仍处于用户指令时切换到监管者模式。这些用户指令可能会破坏用户/内核隔离，例如通过修改 {\tt satp} 寄存器以指向允许访问所有物理内存的页表。因此，CPU 切换到内核指定的指令地址，即 {\tt stvec}，这一点很重要。
 
-\section{Traps from user space}
+\section{来自用户空间的陷入}
 \begin{figure}[t]
   \begin{center}
     \input{fig/trap.tex}
   \end{center}
-\caption{Outline of how a trap from user code is handled.}
+\caption{处理来自用户代码的陷入的概要。}
 \label{fig:usertrap}
 \end{figure}
 
-Xv6 handles traps differently depending on whether
-the trap occurs while
-executing in the kernel or in user code. Here is the
-story for traps from user code; Section~\ref{s:ktraps}
-describes traps from kernel code.
+Xv6 根据陷入发生在内核执行还是用户代码执行中而有所不同地处理陷入。以下是用户代码陷入的故事；Section~\ref{s:ktraps} 描述了内核代码的陷入。
 
-A trap may occur while executing in user space if the
-user program makes a
-system call ({\tt ecall} instruction), or does something
-illegal, or if a device interrupts.
-As shown in Figure~\ref{fig:usertrap}, the high-level path of a trap from user space is
+如果用户程序进行系统调用（{\tt ecall} 指令），或做了非法的事情，或设备中断，则可能在用户空间执行时发生陷入。如 Figure~\ref{fig:usertrap} 所示，来自用户空间的高级别陷入路径是
 {\tt uservec}
-\lineref{kernel/trampoline.S:/^uservec/},
-then {\tt usertrap}
-\lineref{kernel/trap.c:/^usertrap/};
-and when the kernel is ready to return,
+\lineref{kernel/trampoline.S:/^uservec/}，
+然后是 {\tt usertrap}
+\lineref{kernel/trap.c:/^usertrap/}；
+当内核准备返回时，
 {\tt usertrap}
-returns to
+返回给
 {\tt userret}
-\lineref{kernel/trampoline.S:/^userret/}
-which executes {\tt sret}
-to user space.
+\lineref{kernel/trampoline.S:/^userret/}，
+它执行 {\tt sret}
+返回到用户空间。
 
 % talk about why RISC-V doesn't switch page tables
 
-A major constraint on the design of xv6's trap handling is the fact
-that the RISC-V hardware does not switch page tables when it forces a
-trap. This means that the trap handler
-address in {\tt stvec} must have a valid
-mapping in the user page table, since that's the page table in force
-when the trap handling code starts executing. Furthermore, xv6's trap
-handling code needs to switch to the kernel page table; in order to be
-able to continue executing after that switch, the kernel page table
-must also have a mapping for the handler pointed to by {\tt stvec}.
+xv6 陷入处理设计的一个主要限制是 RISC-V 硬件在强制陷入时不会切换页表。这意味着 {\tt stvec} 中的陷入处理程序地址必须在用户页表中有有效映射，因为这是在陷入处理代码开始执行时生效的页表。此外，xv6 的陷入处理代码需要切换到内核页表；为了能够在切换后继续执行，内核页表也必须具有 {\tt stvec} 指向的处理程序的映射。
 
-Xv6 satisfies these requirements using a \indextext{trampoline} page.
-This page contains {\tt uservec}, the xv6 trap handling code
-that {\tt stvec} points to. The trampoline page is mapped in
-every process's page table at virtual address {\tt 0x3ffffff000}
-(called \indexcode{TRAMPOLINE}),
-which is the last page in the virtual address space so that it will
-be above memory that programs use for themselves.
-The trampoline page is mapped at the same virtual address
-in the kernel page table. See Figure~\ref{fig:as} and
-Figure~\ref{fig:xv6_layout}. Because the trampoline page is mapped in
-the user page table, traps can start
-executing there in supervisor mode. Because the trampoline page is
-mapped at the same address in the kernel address space, the trap handler
-can continue to execute after it switches to the kernel page
-table.
+Xv6 使用 \indextext{trampoline}（跳板）页来满足这些要求。此页包含 {\tt uservec}，即 {\tt stvec} 指向的 xv6 陷入处理代码。trampoline 页在每个进程的页表中映射到虚拟地址 {\tt 0x3ffffff000}（称为 \indexcode{TRAMPOLINE}），这是虚拟地址空间中的最后一页，以便它位于程序自己使用的内存之上。trampoline 页在内核页表中映射到相同的虚拟地址。参见 Figure~\ref{fig:as} 和 Figure~\ref{fig:xv6_layout}。因为 trampoline 页映射在用户页表中，所以陷入可以在监管者模式下开始在那里执行。因为 trampoline 页在内核地址空间中映射到相同的地址，所以陷入处理程序可以在切换到内核页表后继续执行。
 
-The code for the {\tt uservec} trap handler is in {\tt trampoline.S}
-\lineref{kernel/trampoline.S:/^uservec/}.
-When {\tt uservec} starts, all 32 registers contain values owned by
-the interrupted user code. These 32 values need to be saved somewhere
-in memory, so that later on
-the kernel can restore them before returning to user space.
-Storing to memory requires use of a register
-to hold the store's destination address,
-but at this point there are no general-purpose registers available!
-Luckily RISC-V provides a helping hand in the
-form of the {\tt sscratch} register. The {\tt csrw} instruction at
-the start of {\tt uservec} saves {\tt a0} in {\tt
-  sscratch}. Now 
-{\tt uservec} has
-one register ({\tt a0}) to play with.
+{\tt uservec} 陷阱处理程序的代码在 {\tt trampoline.S}
+\lineref{kernel/trampoline.S:/^uservec/}。
+当 {\tt uservec} 开始时，所有 32 个寄存器都包含被中断用户代码拥有的值。这 32 个值需要保存在内存中的某个地方，以便以后内核可以在返回用户空间之前恢复它们。存储到内存需要使用寄存器来保存存储的目标地址，但此时没有通用寄存器可用！幸运的是，RISC-V 以 {\tt sscratch} 寄存器的形式提供了帮助。{\tt uservec} 开头的 {\tt csrw} 指令将 {\tt a0} 保存在 {\tt sscratch} 中。现在 {\tt uservec} 有一个寄存器（{\tt a0}）可以使用。
 
-{\tt uservec}'s next task is to save the 32 user registers.
-The kernel allocates, for each process, a page of memory for a
-{\tt trapframe} structure that (among other things) has space to
-save the 32 user registers
-\lineref{kernel/proc.h:/^struct.trapframe/}. Because {\tt satp} still
-refers to the user page table, {\tt uservec} needs the trapframe to be
-mapped in the user address space. Xv6 maps each process's trapframe
-at virtual address {\tt TRAPFRAME} ({\tt 0x3fffffe000}) in that process's user page table;
-one page below {\tt TRAMPOLINE}.
-Each process's {\tt p->trapframe} 
-contains a kernel virtual address for the process's trapframe.
+{\tt uservec} 的下一个任务是保存 32 个用户寄存器。内核为每个进程分配一页内存作为 {\tt trapframe} 结构，该结构（除其他外）有空间保存 32 个用户寄存器
+\lineref{kernel/proc.h:/^struct.trapframe/}。因为 {\tt satp} 仍然引用用户页表，所以 {\tt uservec} 需要 trapframe 映射在用户地址空间中。Xv6 将每个进程的 trapframe 映射到该进程用户页表中的虚拟地址 {\tt TRAPFRAME}（{\tt 0x3fffffe000}）；在 {\tt TRAMPOLINE} 下方一页。每个进程的 {\tt p->trapframe}
+包含进程 trapframe 的内核虚拟地址。
 
-{\tt uservec} sets register {\tt a0} to address {\tt TRAPFRAME}
-and saves all the user registers there.
-Then it retrieves the user {\tt a0} from {\tt sscratch} and
-saves it in the trapframe.
+{\tt uservec} 将寄存器 {\tt a0} 设置为地址 {\tt TRAPFRAME} 并将所有用户寄存器保存在那里。然后它从 {\tt sscratch} 检索用户 {\tt a0} 并将其保存在 trapframe 中。
 
-The kernel previously initialized the trapframe to contain some
-values useful to {\tt uservec}:
-the address of the current process's
-kernel stack, the current CPU's hartid, the address of the {\tt usertrap}
-function,
-and the address of the kernel page table. {\tt uservec}
-retrieves these values, switches {\tt satp} to the kernel page table,
-and jumps to {\tt usertrap}, a C function.
+内核先前初始化 trapframe 以包含对 {\tt uservec} 有用的一些值：当前进程的内核栈地址、当前 CPU 的 hartid、{\tt usertrap} 函数的地址以及内核页表的地址。{\tt uservec} 检索这些值，将 {\tt satp} 切换到内核页表，并跳转到 {\tt usertrap}，一个 C 函数。
 
-The job of {\tt usertrap} is to determine
-the cause of the trap, process it, and return
-\lineref{kernel/trap.c:/^usertrap/}.
-It first changes {\tt stvec} so
-that a trap while in the kernel will be handled by
-{\tt kernelvec} rather than {\tt uservec}.
-It saves the {\tt sepc} register (the saved user program counter)
-for future use when returning back to user space.
-If the trap is a system call, {\tt usertrap} calls {\tt syscall} to
-handle it;
-if a device interrupt, {\tt devintr};
-if a page fault,  {\tt vmfault};
-otherwise it's an exception (e.g., use of an invalid address),
-and the kernel kills the faulting process.
-The system call path adds four to the saved user program counter
-because RISC-V, in the case of a system call,
-leaves the program pointer pointing to the {\tt ecall} instruction
-but user code needs to resume executing at the subsequent instruction.
-{\tt usertrap} checks if the process has been
-killed or should yield the CPU (if this trap is a timer interrupt).
+{\tt usertrap} 的工作是确定陷入的原因，处理它，并返回
+\lineref{kernel/trap.c:/^usertrap/}。
+它首先更改 {\tt stvec}，以便内核中的陷入将由 {\tt kernelvec} 而不是 {\tt uservec} 处理。它保存 {\tt sepc} 寄存器（保存的用户程序计数器）以供将来返回用户空间时使用。如果陷入是系统调用，{\tt usertrap} 调用 {\tt syscall} 来处理它；如果是设备中断，{\tt devintr}；如果是页错误，{\tt vmfault}；否则它是异常（例如，使用无效地址），内核杀死故障进程。系统调用路径将保存的用户程序计数器加四，因为在系统调用的情况下，RISC-V 使程序指针指向 {\tt ecall} 指令，但用户代码需要从后续指令恢复执行。{\tt usertrap} 检查进程是否已被杀死或应该让出 CPU（如果此陷入是定时器中断）。
 
-The first step in returning to user space is the call to {\tt prepare\_return}
-{\lineref{kernel/trap.c:/^prepare/}}.
-This function sets up the RISC-V control registers to prepare for a
-future trap from user space: setting {\tt stvec}
-to {\tt uservec} and preparing the trapframe fields that
-{\tt uservec} relies on.
-{\tt prepare\_return} sets {\tt sepc} to the previously
-saved user program counter.
-Finally, {\tt usertrap}
-returns back to {\tt userret} in the trampoline page
-\lineref{kernel/trampoline.S:/^userret/},
-passing back a pointer to the user page table in {\tt a0}.
+返回用户空间的第一步是调用 {\tt prepare\_return}
+{\lineref{kernel/trap.c:/^prepare/}}。
+此函数设置 RISC-V 控制寄存器以准备将来从用户空间陷入：设置 {\tt stvec}
+为 {\tt uservec} 并准备 {\tt uservec} 依赖的 trapframe 字段。{\tt prepare\_return} 将 {\tt sepc} 设置为先前保存的用户程序计数器。最后，{\tt usertrap}
+返回到 trampoline 页中的 {\tt userret}
+\lineref{kernel/trampoline.S:/^userret/}，
+在 {\tt a0} 中传递回指向用户页表的指针。
 
-{\tt userret} switches {\tt satp} to the process's user page table.
-Recall that the user page table maps both the trampoline page
-and {\tt TRAPFRAME}, but nothing else from the kernel.
-The trampoline page mapping at the same
-virtual address in user and kernel page tables allows
-{\tt userret} to keep executing after changing {\tt satp}.
-From this point on, the only data {\tt userret} can use is
-the register contents and the content of the trapframe.
-{\tt userret} loads the {\tt TRAPFRAME} address into {\tt a0},
-restores saved user registers from the trapframe via {\tt a0},
-restores the saved user {\tt a0},
-and executes {\tt sret} to return to user space.
+{\tt userret} 将 {\tt satp} 切换到进程的用户页表。回想一下，用户页表映射了 trampoline 页和 {\tt TRAPFRAME}，但不映射内核的其他任何内容。trampoline 页在用户和内核页表中相同虚拟地址的映射允许 {\tt userret} 在更改 {\tt satp} 后继续执行。从这一点开始，{\tt userret} 可以使用的唯一数据是寄存器内容和 trapframe 内容。{\tt userret} 将 {\tt TRAPFRAME} 地址加载到 {\tt a0} 中，通过 {\tt a0} 从 trapframe 恢复保存的用户寄存器，恢复保存的用户 {\tt a0}，并执行 {\tt sret} 返回到用户空间。
 
-{\tt uservec} and {\tt userret} are written in assembly
-language because it is difficult to write C code to
-save or  restore all the registers or survive switching
-page tables.
+{\tt uservec} 和 {\tt userret} 用汇编语言编写，因为很难编写 C 代码来保存或恢复所有寄存器或在切换页表后生存。
 
-\section{Code: Calling system calls}
+\section{代码：调用系统调用}
 
-User programs call library functions in order to make system calls.
-For example, the shell displays a prompt with this function call
-(in {\tt user/sh.c}):
+用户程序调用库函数以进行系统调用。例如，shell 使用此函数调用显示提示符（在 {\tt user/sh.c} 中）：
 
 \begin{verbatim}
   write(2, "$ ", 2);
 \end{verbatim}
 
-Here's the library function, in {\tt user/usys.S}:
+这是库函数，在 {\tt user/usys.S} 中：
 
 \begin{verbatim}
 write:
@@ -310,203 +136,92 @@ write:
  ret
 \end{verbatim}
 
-The code that the C compiler generates for the function call
-loads the three arguments into registers {\tt a0},
-{\tt a1}, and {\tt a2}. Then the {\tt write()} function
-loads the system call number, {\tt SYS\_write} (16), into {\tt a7}.
-The kernel will look at those registers to find out what
-system call is intended, and what the arguments are.
-The \lstinline{ecall} instruction traps from user space
-into the kernel and causes
-{\tt uservec},
-{\tt usertrap}, and then {\tt syscall} to execute.
+C 编译器为函数调用生成的代码将三个参数加载到寄存器 {\tt a0}、{\tt a1} 和 {\tt a2} 中。然后 {\tt write()} 函数将系统调用号 {\tt SYS\_write} (16) 加载到 {\tt a7} 中。内核将查看这些寄存器以找出打算进行什么系统调用以及参数是什么。\lstinline{ecall} 指令从用户空间陷入内核并导致
+{\tt uservec}、{\tt usertrap}，然后 {\tt syscall} 执行。
 
-At this point, please read {\tt kernel/syscall.c},
-{\tt sys\_write()} in {\tt kernel/sysfile.c},
-and {\tt copyout()}, {\tt copyin()}, and {\tt copyinstr()} in {\tt kernel/vm.c}.
+此时，请阅读 {\tt kernel/syscall.c}、{\tt kernel/sysfile.c} 中的 {\tt sys\_write()}，以及 {\tt kernel/vm.c} 中的 {\tt copyout()}、{\tt copyin()} 和 {\tt copyinstr()}。
 
 \indexcode{syscall}
-\lineref{kernel/syscall.c:/^syscall/} 
-retrieves the system call number from the saved
-\texttt{a7} in the trapframe
-and uses it to index into {\tt syscalls}
-\lineref{kernel/syscall.c:/syscalls/}.
-For our example, 
+\lineref{kernel/syscall.c:/^syscall/}
+从陷阱帧中保存的
 \texttt{a7}
-contains 
+检索系统调用号
+并使用它索引到
+{\tt syscalls}
+\lineref{kernel/syscall.c:/syscalls/}。
+在我们的示例中，
+\texttt{a7}
+包含
 \indexcode{SYS_write}
-\lineref{kernel/syscall.h:/SYS_write/},
-resulting in a call to the system call implementation function
-\lstinline{sys_write}.
+\lineref{kernel/syscall.h:/SYS_write/}，
+导致调用系统调用实现函数
+\lstinline{sys_write}。
 
-When \lstinline{sys_write} returns,
-\lstinline{syscall}
-records its return value in
-\lstinline{p->trapframe->a0}.
-This will cause the original user-space call to 
-{\tt write()} to return that value, since the C
-calling convention on RISC-V places return values in {\tt a0}.
-System calls conventionally return negative numbers to indicate
-errors, and zero or positive numbers for success.
+当 \lstinline{sys_write} 返回时，\lstinline{syscall} 将其返回值记录在 \lstinline{p->trapframe->a0} 中。这将导致原始用户空间对 {\tt write()} 的调用返回该值，因为 RISC-V 上的 C 调用约定将返回值放在 {\tt a0} 中。系统调用通常返回负数以指示错误，返回零或正数以指示成功。
 
-\section{Code: System call arguments}
+\section{代码：系统调用参数}
 
-System call arguments start out in the user registers, and
-are then moved to the trap frame by the kernel trap code.
-The kernel functions
-\lstinline{argint},
-\lstinline{argaddr},
-and
+系统调用参数最初位于用户寄存器中，然后由内核陷阱代码移动到陷阱帧中。内核函数
+\lstinline{argint}、
+\lstinline{argaddr}
+和
 \lstinline{argfd}
-retrieve the 
-\textit{n} 'th 
-system call argument
-from the trap frame
-as an integer, pointer, or a file descriptor.
+从陷阱帧中检索第
+\textit{n}
+个系统调用参数作为整数、指针或文件描述符。
 
-Some system calls pass pointers as arguments, and the kernel must use
-those pointers to read or write user memory. The {\tt write} system
-call, for example, passes the kernel a user-space pointer
-to the data to be written.
-Such pointers pose
-two challenges. First, the user program may be buggy or malicious, and
-may pass the kernel an invalid pointer or a pointer intended to trick
-the kernel into accessing kernel memory instead of user memory.
-Second, the xv6 kernel page table mappings are not the same as the
-user page table mappings, so the kernel cannot use ordinary
-instructions to load or store from user-supplied addresses.
+一些系统调用将指针作为参数传递，内核必须使用这些指针来读取或写入用户内存。例如，{\tt write} 系统调用向内核传递一个用户空间指针，指向要写入的数据。此类指针带来两个挑战。首先，用户程序可能有错误或恶意，可能向内核传递无效指针或旨在欺骗内核访问内核内存而不是用户内存的指针。其次，xv6 内核页表映射与用户页表映射不同，因此内核不能使用普通指令从用户提供的地址加载或存储。
 
-The kernel implements functions that safely transfer data to and
-from user-supplied addresses.
-{\tt fetchstr} is an example \lineref{kernel/syscall.c:/^fetchstr/}.
-File system calls such as
-{\tt exec} use {\tt fetchstr} to retrieve string file-name arguments from user
-space.
-\lstinline{fetchstr} calls \lstinline{copyinstr}
-to do the hard work.
+内核实现函数来安全地在用户提供的地址之间传输数据。{\tt fetchstr} 是一个例子 \lineref{kernel/syscall.c:/^fetchstr/}。
+文件系统调用如
+{\tt exec} 使用 {\tt fetchstr} 从用户空间检索字符串文件名参数。
+\lstinline{fetchstr} 调用 \lstinline{copyinstr}
+来完成艰苦的工作。
 
 \indexcode{copyinstr}
-\lineref{kernel/vm.c:/^copyinstr/} copies up to \lstinline{max} bytes to
-\lstinline{dst} from virtual address \lstinline{srcva} in the user page
-table \lstinline{pagetable}.
-Since \lstinline{pagetable} is {\it not} the current page
-table,
-\lstinline{copyinstr} uses {\tt walkaddr}
-(which calls {\tt walk}) to look up
-\lstinline{srcva} in
-\lstinline{pagetable}, yielding
-physical address \lstinline{pa0}.
-The kernel's page table maps all of physical RAM 
-at virtual addresses that are equal to the RAM's physical address.
-This allows
-{\tt copyinstr} to directly copy string bytes from {\tt pa0} to {\tt dst}.
-{\tt walkaddr} 
+\lineref{kernel/vm.c:/^copyinstr/} 将最多 \lstinline{max} 字节从用户页表 \lstinline{pagetable} 中的虚拟地址 \lstinline{srcva} 复制到 \lstinline{dst}。由于 \lstinline{pagetable} \textit{不是}当前页表，\lstinline{copyinstr} 使用 {\tt walkaddr}（调用 {\tt walk}）在 \lstinline{pagetable} 中查找 \lstinline{srcva}，产生物理地址 \lstinline{pa0}。内核的页表将所有物理 RAM 映射到等于 RAM 物理地址的虚拟地址。这允许 {\tt copyinstr} 直接从 {\tt pa0} 复制字符串字节到 {\tt dst}。{\tt walkaddr}
 \lineref{kernel/vm.c:/^walkaddr/}
-checks that the user-supplied virtual address is part of
-the process's user address space, so programs
-cannot trick the kernel into reading other memory.
-A similar function, {\tt copyout}, copies data from the
-kernel to a user-supplied address.
+检查用户提供的虚拟地址是否是进程用户地址空间的一部分，因此程序不能欺骗内核读取其他内存。类似的函数 {\tt copyout} 将数据从内核复制到用户提供的地址。
 
-\section{Traps from kernel space}
+\section{来自内核空间的陷入}
 \label{s:ktraps}
 
-Please read {\tt kernel/kernelvec.S},
-and {\tt kerneltrap()} in {\tt kernel/trap.c}.
+请阅读 {\tt kernel/kernelvec.S} 和 {\tt kernel/trap.c} 中的 {\tt kerneltrap()}。
 
-Xv6 handles traps from kernel code in a different way
-than traps from user code.
-When entering the kernel, {\tt usertrap} points {\tt stvec}
-to the assembly code at {\tt kernelvec}
-\lineref{kernel/kernelvec.S:/^kernelvec/}.
-Since {\tt kernelvec} only executes if
-xv6 was already in the kernel, {\tt kernelvec} can rely
-on {\tt satp} being set to the kernel page table, and on the
-stack pointer referring to a valid kernel stack.
-{\tt kernelvec} pushes all 32 registers onto the current stack,
-from which it will later restore them
-so that the interrupted
-kernel code can resume without disturbance.
+Xv6 以不同于用户代码陷入的方式处理内核代码的陷入。进入内核时，{\tt usertrap} 将 {\tt stvec} 指向 {\tt kernelvec} 处的汇编代码
+\lineref{kernel/kernelvec.S:/^kernelvec/}。
+因为 {\tt kernelvec} 只有在 xv6 已经在内核中时才会执行，所以 {\tt kernelvec} 可以依赖 {\tt satp} 被设置为内核页表，并且栈指针引用有效的内核栈。{\tt kernelvec} 将所有 32 个寄存器推入当前栈，稍后将从那里恢复它们，以便被中断的内核代码可以在不受干扰的情况下恢复。
 
-{\tt kernelvec} saves the registers on the stack of the interrupted
-kernel thread, which makes sense because the register values belong to
-that thread. This is particularly important if the trap causes a
-switch to a different thread -- in that case the trap will actually
-return from the stack of the new thread, leaving the interrupted
-thread's saved registers safely on its stack.
+{\tt kernelvec} 在被中断的内核线程的栈上保存寄存器，这是有意义的，因为寄存器值属于该线程。如果陷入导致切换到不同的线程，这一点尤其重要——在这种情况下，陷入实际上将从新线程的栈返回，将被中断线程的保存寄存器安全地留在其栈上。
 
-{\tt kernelvec} jumps to {\tt kerneltrap}
-\lineref{kernel/trap.c:/^kerneltrap/} after saving registers.
-{\tt kerneltrap} is prepared for just one type of trap:
-device interrupts. It calls
-{\tt devintr}
+{\tt kernelvec} 在保存寄存器后跳转到 {\tt kerneltrap}
+\lineref{kernel/trap.c:/^kerneltrap/}。
+{\tt kerneltrap} 只准备一种类型的陷入：设备中断。它调用 {\tt devintr}
 \lineref{kernel/trap.c:/^devintr/}
-to handle them.
-If the trap isn't a device interrupt, it must be an exception,
-such as kernel code trying to use an invalid pointer.
-This could only be caused by a bug in the kernel code.
-The kernel does not have a way to recover in this situation,
-so it calls {\tt panic()}, which prints an error message
-and then halts.
+来处理它们。如果陷入不是设备中断，它必须是异常，例如内核代码尝试使用无效指针。这只能由内核代码中的错误引起。内核没有办法在这种情况下恢复，因此它调用 {\tt panic()}，打印错误消息然后停止。
 
-If {\tt kerneltrap} was called due to a timer interrupt, and a
-process's kernel thread is running (as opposed to a scheduler thread),
-{\tt kerneltrap} calls {\tt yield} to give other threads a chance to
-run. At some point one of those threads will yield, and let our thread
-and its {\tt kerneltrap} resume again.
-Chapter~\ref{CH:SCHED} explains what happens in {\tt yield}.
+如果由于定时器中断而调用 {\tt kerneltrap}，并且进程的内核线程正在运行（相对于调度程序线程），{\tt kerneltrap} 调用 {\tt yield} 给其他线程运行的机会。在某个时候，其中一个线程会让出，让我们的线程及其 {\tt kerneltrap} 再次恢复。Chapter~\ref{CH:SCHED} 解释了 {\tt yield} 中发生的事情。
 
-When {\tt kerneltrap}'s work is done, it needs to return to whatever
-code was interrupted by the trap. Because a {\tt yield} may have
-disturbed {\tt sepc} and the previous mode in {\tt sstatus},
-{\tt kerneltrap} saves them when it starts. It now restores those
-control registers and returns to {\tt kernelvec}
-\lineref{kernel/kernelvec.S:/call.kerneltrap$/}.
-{\tt kernelvec} pops the saved registers from the stack and
-executes {\tt sret}, which copies {\tt sepc} to {\tt pc}
-and resumes the interrupted kernel code.
+当 {\tt kerneltrap} 的工作完成时，它需要返回到被陷入中断的任何代码。因为 {\tt yield} 可能扰乱了 {\tt sepc} 和 {\tt sstatus} 中的先前模式，{\tt kerneltrap} 在开始时保存它们。它现在恢复那些控制寄存器并返回到 {\tt kernelvec}
+\lineref{kernel/kernelvec.S:/call.kerneltrap$/}。
+{\tt kernelvec} 从栈中弹出保存的寄存器并执行 {\tt sret}，它将 {\tt sepc} 复制到 {\tt pc} 并恢复被中断的内核代码。
 
-Xv6 sets a CPU's {\tt stvec} to {\tt kernelvec} when that CPU
-enters the kernel from user space; you can see this in {\tt usertrap}
-\lineref{kernel/trap.c:/DOC: kernelvec/}.
-But there's a window of time when the kernel has started executing
-but {\tt stvec} is still set to {\tt uservec}, and it's crucial that 
-no device interrupt occur during that window.
-Luckily the RISC-V always disables interrupts when it starts
-to take a trap, and {\tt usertrap} doesn't enable them again until
-after it sets {\tt stvec}.
+Xv6 在 CPU 从用户空间进入内核时将 CPU 的 {\tt stvec} 设置为 {\tt kernelvec}；你可以在 {\tt usertrap}
+\lineref{kernel/trap.c:/DOC:.kernelvec/}
+中看到这一点。但有一个时间窗口，内核已经开始执行但 {\tt stvec} 仍设置为 {\tt uservec}，关键是该窗口内不能发生设备中断。幸运的是，RISC-V 在开始陷入时总是禁用中断，并且 {\tt usertrap} 在设置 {\tt stvec} 之后才重新启用它们。
 
-\section{Real world}
+\section{现实世界}
 
-The need for trampoline pages could be eliminated if kernel
-memory were mapped into every process's user page table (with
-\lstinline{PTE_U} clear).
-That would
-also eliminate the need for a page table switch when trapping from
-user space into the kernel. That in turn would allow system call
-implementations in the kernel to take advantage of the current
-process's user memory being mapped, allowing kernel code to directly
-dereference user pointers. Many operating systems have used these ideas to
-increase efficiency. Xv6 avoids them in order to reduce the chances of
-security bugs in the kernel due to inadvertent use of user pointers,
-and to reduce some complexity that would be required to ensure that
-user and kernel virtual addresses don't overlap.
+如果内核内存映射到每个进程的用户页表中（使用 \lstinline{PTE_U} 清除），则可以消除对 trampoline 页的需求。这也会消除从用户空间陷入内核时切换页表的需要。反过来，这将允许内核中的系统调用实现利用当前进程的用户内存被映射的优势，允许内核代码直接解引用用户指针。许多操作系统使用这些想法来提高效率。Xv6 避免它们是为了减少由于无意使用用户指针而导致内核安全错误的机会，并减少确保用户和内核虚拟地址不重叠所需的一些复杂性。
 
-\section{Exercises}
+\section{练习}
 
 \begin{enumerate}
 
-\item Could some or all of the code in {\tt trampoline.S} and
-{\tt kernelvec.S} be written in C rather than assembler?
+\item {\tt trampoline.S} 和 {\tt kernelvec.S} 中的部分或全部代码可以用 C 而不是汇编器编写吗？
 
-\item Is there a way to eliminate the special {\tt
-  TRAPFRAME} page mapping in every user address space? For
-  example, could
-  {\tt uservec} be modified to simply push the 32 user registers
-  onto the kernel stack, or store them in the {\tt proc}
-  structure?
+\item 有没有办法消除每个用户地址空间中的特殊 {\tt TRAPFRAME} 页映射？例如，可以修改 {\tt uservec} 以简单地将 32 个用户寄存器推入内核栈，或将它们存储在 {\tt proc} 结构中吗？
 
-\item Could xv6 be modified to eliminate the special {\tt
-  TRAMPOLINE} page mapping?
+\item 可以修改 xv6 以消除特殊的 {\tt TRAMPOLINE} 页映射吗？
 
 \end{enumerate}
