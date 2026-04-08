@@ -359,21 +359,21 @@ Figure~\ref{fig:locktable}
 \begin{tabular}{ll}
 {\bf 锁} & {\bf 描述} \\\
 \midrule
-bcache.lock & Protects allocation of block buffer cache entries \\
-cons.lock & Serializes read processing of console input \\
-tx\_lock & Serializes access to console (uart) output hardware \\
-ftable.lock & Serializes allocation of a struct file in file table \\
-itable.lock & Protects allocation of in-memory inode entries \\
-vdisk\_lock & Serializes access to disk hardware and queue of DMA descriptors \\
-kmem.lock & Serializes allocation of memory \\
-log.lock & Serializes operations on the transaction log \\
-pipe's pi->lock & Serializes operations on each pipe \\
-pid\_lock & Serializes increments of next\_pid \\
-proc's p->lock & Serializes changes to process's state \\
-wait\_lock & Helps wait avoid lost wakeups \\
-tickslock & Serializes operations on the ticks counter \\
-inode's ip->lock & Serializes operations on each inode and its content \\
-buf's b->lock & Serializes operations on each block buffer \\
+bcache.lock & 保护块缓冲区缓存条目的分配 \\\
+cons.lock & 串行化控制台输入的读取处理 \\\
+tx\_lock & 串行化对控制台 (uart) 输出硬件的访问 \\\
+ftable.lock & 串行化文件表中 struct file 的分配 \\\
+itable.lock & 保护内存中 inode 条目的分配 \\\
+vdisk\_lock & 串行化对磁盘硬件和 DMA 描述符队列的访问 \\\
+kmem.lock & 串行化内存分配 \\\
+log.lock & 串行化事务日志的操作 \\\
+pipe's pi->lock & 串行化每个管道的操作 \\\
+pid\_lock & 串行化 next_pid 的增量 \\\
+proc's p->lock & 串行化进程状态的更改 \\\
+wait\_lock & 帮助 wait 避免丢失唤醒 \\\
+tickslock & 串行化 ticks 计数器的操作 \\\
+inode's ip->lock & 串行化每个 inode 及其内容的操作 \\\
+buf's b->lock & 串行化每个块缓冲区的操作 \\
 \end{tabular}
 \caption{xv6 中的锁}
 \label{fig:locktable}
@@ -460,12 +460,12 @@ Xv6 有许多长度为二的锁顺序链，涉及每个进程的锁（每个
 当 CPU 不持有任何自旋锁时，Xv6 重新启用中断；它必须
 做一些记账以应对嵌套临界区。
 \lstinline{acquire}
-calls
+调用
 \indexcode{push_off}
 \lineref{kernel/spinlock.c:/^push_off/}
-and
+和
 \lstinline{release}
-calls
+调用
 \indexcode{pop_off}
 \lineref{kernel/spinlock.c:/^pop_off/}
 来跟踪当前 CPU 上锁的嵌套级别。
