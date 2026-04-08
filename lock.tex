@@ -156,21 +156,21 @@ Figure~\ref{fig:smp} 更详细地说明了设置：空闲页面链表位于两�
 \indextext{争用}。
 内核设计中的一个主要挑战是避免锁争用以追求并行性。Xv6 在这方面做得很少，但复杂的内核专门组织数据结构和算法以避免锁争用。在列表示例中，内核可以维护每个 CPU 一个单独的空闲列表，并且只在当前 CPU 的列表为空且必须从另一个 CPU 窃取内存时才触及另一个 CPU 的空闲列表。其他用例可能需要更复杂的设计。
 
-The placement of locks is also important for performance.
-For example, it would be correct to move
+锁的位置对性能也很重要。
+例如，将
 \lstinline{acquire}
-earlier in
-\lstinline{push},
-before line~\ref{line:malloc}.
-But this would likely reduce performance because then the calls
-to
+向上移动
+\lstinline{push}
+中的
+第~\ref{line:malloc} 行之前是正确的。
+但这可能会降低性能，因为这样对
 \lstinline{malloc}
-would be serialized.
-The section ``Using locks'' below provides some guidelines for where to insert
+的调用将被串行化。
+下面的``使用锁''部分提供了在哪里插入
 \lstinline{acquire}
-and
+和
 \lstinline{release}
-invocations.
+调用的指导。
 %% 
 \section{代码：锁}
 %% 
@@ -357,7 +357,7 @@ Figure~\ref{fig:locktable}
 \begin{figure}[t]
 \center
 \begin{tabular}{ll}
-{\bf Lock} & {\bf Description} \\
+{\bf 锁} & {\bf 描述} \\\
 \midrule
 bcache.lock & Protects allocation of block buffer cache entries \\
 cons.lock & Serializes read processing of console input \\
@@ -457,8 +457,8 @@ Xv6 有许多长度为二的锁顺序链，涉及每个进程的锁（每个
 \lstinline{acquire}
 可以等待线程释放自旋锁；只是不能在同一个 CPU 上。
 
-Xv6 re-enables interrupts when a CPU holds no spinlocks; it must
-do a little book-keeping to cope with nested critical sections.
+当 CPU 不持有任何自旋锁时，Xv6 重新启用中断；它必须
+做一些记账以应对嵌套临界区。
 \lstinline{acquire}
 calls
 \indexcode{push_off}
