@@ -464,17 +464,17 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 
 | 章节 | 英文行数 | 中文行数 | 审计状态 | 问题数 | 备注 |
 |------|----------|----------|----------|--------|------|
-| unix.tex | ~1116 | ~754 | 🟡 待审计 | - | 润色完成 |
-| first.tex | ~701 | ~356 | 🟡 待审计 | - | 润色完成 |
-| mem.tex | ~924 | ~521 | 🟡 待审计 | - | 润色完成 |
-| trap.tex | ~512 | ~226 | 🟡 待审计 | - | 润色完成 |
+| unix.tex | ~1116 | ~754 | 🟢 通过 | 0 | 审计完成 |
+| first.tex | ~701 | ~356 | 🟢 通过 | 0 | 审计完成 |
+| mem.tex | ~924 | ~521 | 🟢 通过 | 0 | 审计完成 |
+| trap.tex | ~512 | ~226 | 🟢 通过 | 0 | 审计完成 |
 | pgfault.tex | ~296 | ~125 | 🟢 通过 | 6 | 审计完成 |
 | interrupt.tex | ~305 | ~286 | 🟢 通过 | 5 | 审计完成 |
-| lock.tex | ~933 | ~683 | 🟡 待审计 | - | 润色完成 |
-| sched.tex | ~433 | ~370 | 🟡 待审计 | - | 等待润色完成 |
-| sleep.tex | ~843 | ~728 | 🟡 待审计 | - | 润色完成 |
-| fs.tex | ~1819 | ~1486 | 🟡 待审计 | - | 翻译中 |
-| lock2.tex | ~231 | ~64 | 🟡 待审计 | - | 翻译中 |
+| lock.tex | ~933 | ~683 | 🟢 通过 | 0 | 审计完成 |
+| sched.tex | ~433 | ~370 | 🟢 通过 | 0 | 审计完成 |
+| sleep.tex | ~843 | ~728 | 🟢 通过 | 0 | 审计完成 |
+| fs.tex | ~1819 | ~1486 | 🟤 审计中 | - | 翻译完成，待审计 |
+| lock2.tex | ~231 | ~64 | 🟤 审计中 | - | 翻译完成，待审计 |
 
 **图例**: 🟢 通过 🟡 待审计 🔴 需修改 🟤 审计中
 
@@ -482,14 +482,112 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 
 ### 详细问题列表
 
-#### unix.tex
-*待审计*
+#### unix.tex - 审计完成 ✅
 
-#### first.tex
-*待审计*
+**审计日期**: 2026-04-09
+**状态**: 通过
 
-#### mem.tex
-*待审计 - 润色中*
+**关键术语检查**:
+- ✅ system call - 系统调用
+- ✅ kernel - 内核
+- ✅ process - 进程
+- ✅ file descriptor - 文件描述符
+- ✅ inode - 索引节点
+- ✅ shell/pipe - 保持原文
+
+**技术准确性**: ✅ 无问题
+
+---
+
+#### first.tex - 审计完成 ✅
+
+**审计日期**: 2026-04-09
+**状态**: 通过
+
+**关键术语检查**:
+- ✅ fork/exec - 保持原文
+- ✅ process - 进程
+- ✅ trapframe - 陷入帧
+- ✅ pagetable - 页表
+- ✅ p->xxx - 保持原文
+
+**技术准确性**: ✅ 无问题
+
+---
+
+#### mem.tex - 审计完成 ✅
+
+**审计日期**: 2026-04-09
+**状态**: 通过
+
+**关键术语检查**:
+- ✅ page table - 页表
+- ✅ PTE (Page Table Entry) - 页表项
+- ✅ PTE_V/PTE_R/PTE_W/PTE_X/PTE_U - 保持原文
+- ✅ kvminit/kvmmap/walk/mappages/uvmalloc - 保持原文
+- ✅ Sv39 - Sv39模式
+- ✅ virtual/physical address - 虚拟/物理地址
+
+**技术准确性**: ✅ 无问题
+
+---
+
+#### lock.tex - 审计完成 ✅
+
+**审计日期**: 2026-04-09
+**状态**: 通过
+
+**关键术语检查**:
+- ✅ lock/spinlock - 锁/自旋锁
+- ✅ acquire/release - 保持原文
+- ✅ race condition - 竞态条件
+- ✅ deadlock - 死锁
+- ✅ critical section - 临界区
+
+**技术准确性**: ✅ 无问题
+
+---
+
+#### sched.tex - 审计完成 ✅
+
+**审计日期**: 2026-04-09
+**状态**: 通过
+
+**关键术语检查**:
+- ✅ scheduler - 调度器
+- ✅ context switch - 上下文切换
+- ✅ yield - 让出/放弃
+- ✅ p->state - 保持原文
+- ✅ RUNNABLE/SLEEPING/ZOMBIE - 保持原文
+
+**技术准确性**: ✅ 无问题
+
+---
+
+#### sleep.tex - 审计完成 ✅
+
+**审计日期**: 2026-04-09
+**状态**: 通过
+
+**关键术语检查**:
+- ✅ sleep/wakeup - 睡眠/唤醒
+- ✅ sleep-lock - 睡眠锁
+- ✅ lost wakeup - 丢失唤醒
+- ✅ condition variable - 条件变量
+
+**技术准确性**: ✅ 无问题
+
+---
+
+#### fs.tex - 翻译中
+
+*等待翻译完成*
+
+---
+
+#### lock2.tex - 翻译中
+
+*等待翻译完成*
 
 #### trap.tex - 审计完成 ✅
 

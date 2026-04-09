@@ -97,8 +97,7 @@ swtch:
 \lstinline{scheduler}
 函数。该函数负责选择接下来运行哪个进程。每个 CPU 都有自己的调度器线程，因为可能有多个 CPU 同时寻找可运行的进程。进程切换总是通过调度器线程进行，而非直接从一进程切换到另一进程，以避免某些情况下调度器无栈可执行（例如，若旧进程已退出，或当前无其他进程想要运行）。
 
-想要放弃 CPU 的进程必须
-获取自己的进程锁
+想要放弃 CPU 的进程必须获取自己的进程锁
 \indexcode{p->lock}，
 释放它持有的任何其他锁，
 更新自己的状态
@@ -132,15 +131,11 @@ swtch:
 \lstinline{scheduler}
 \lineref{kernel/proc.c:/^scheduler/}
 运行一个循环：
-找到一个要运行的进程，{\tt swtch()} 到它，最终它会 {\tt swtch()} 回调度器，然后调度器继续其循环。
-调度器遍历进程表，
-寻找可运行的进程，即具有
+找到一个要运行的进程，{\tt swtch()} 到它，最终该进程会 {\tt swtch()} 回调度器，然后调度器继续其循环。调度器遍历进程表，寻找可运行的进程，即具有
 \lstinline{p->state}
 \lstinline{==}
 \lstinline{RUNNABLE}
-的进程。
-一旦找到进程，它就设置每个 CPU 的当前进程
-变量
+的进程。一旦找到进程，它就设置每个 CPU 的当前进程变量
 \lstinline{c->proc}，
 将进程标记为
 \lstinline{RUNNING}，
@@ -148,9 +143,7 @@ swtch:
 \indexcode{swtch}
 开始运行它
 \linerefs{kernel/proc.c:/Switch.to/,/swtch/}。
-在过去的某个时刻，目标进程必须调用了 {\tt swtch()}；
-调度器对 {\tt swtch()} 的调用有效地从该早期调用返回。
-图~\ref{fig:inout} 说明了这种模式。
+在过去某个时刻，目标进程必须调用了 {\tt swtch()}；调度器对 {\tt swtch()} 的调用有效地从该早期调用返回。图~\ref{fig:inout} 说明了这种模式。
 
 \begin{figure}[t]
 \input{fig/switch.tex}
@@ -211,16 +204,14 @@ CPU $c$ 将调用 \lstinline{swtch}，
 \indexcode{swtch}
 的调用不会最终进入
 \indexcode{sched}。
-\lstinline{allocproc} 将新进程的上下文 {\tt ra}
-寄存器设置为
+\lstinline{allocproc} 将新进程的上下文 {\tt ra} 寄存器设置为
 \indexcode{forkret}
 \lineref{kernel/proc.c:/^forkret/}，
 因此其第一次 \lstinline{swtch} ``返回''到该函数的开头。
 \lstinline{forkret}
 存在是为了释放
 \indexcode{p->lock}
-并设置一些控制寄存器和陷入帧字段，
-这些是返回用户空间所需的。
+并设置一些控制寄存器和陷入帧字段，这些是返回用户空间所需的。
 最后，{\tt forkret} 模拟从系统调用返回到用户空间的正常返回路径。
 
 
@@ -228,24 +219,16 @@ CPU $c$ 将调用 \lstinline{swtch}，
 \section{代码：mycpu 和 myproc}
 %%
 
- xv6 经常需要获取指向当前进程的 \lstinline{proc} 结构体的指针。
-在单核处理器上，可以使用全局变量指向当前 \lstinline{proc}。
-这在多核机器上行不通，因为每个 CPU 执行不同的进程。
-解决这个问题的方法是利用每个 CPU 都有自己的寄存器组这一事实。
+xv6 经常需要获取指向当前进程的 \lstinline{proc} 结构体的指针。在单核处理器上，可以使用全局变量指向当前 \lstinline{proc}。这在多核机器上行不通，因为每个 CPU 执行不同的进程。解决方法是利用每个 CPU 都有自己的寄存器组这一事实。
 
-当给定 CPU 在内核中执行时，xv6 确保 CPU 的 \lstinline{tp}
-寄存器始终保存 CPU 的 hartid。
-RISC-V 对其 CPU 进行编号，给每个一个唯一的 \indextext{hartid}。
+当给定 CPU 在内核中执行时，xv6 确保 CPU 的 \lstinline{tp} 寄存器始终保存 CPU 的 hartid。RISC-V 对其 CPU 进行编号，给每个一个唯一的 \indextext{hartid}。
 \indexcode{mycpu}
 \lineref{kernel/proc.c:/^mycpu/}
 使用 \lstinline{tp} 索引一个
 \lstinline{cpu} 结构体数组，并返回当前 CPU 的那个结构体。
 \indexcode{struct cpu}
 \lineref{kernel/proc.h:/^struct.cpu/}
-保存一个指向正在该 CPU 上运行的
-进程的 \lstinline{proc} 结构体的指针（如果有），
-CPU 调度器线程的已保存寄存器，
-以及管理中断禁用所需的嵌套自旋锁计数。
+保存一个指向正在该 CPU 上运行的进程的 \lstinline{proc} 结构体的指针（如果有），CPU 调度器线程的已保存寄存器，以及管理中断禁用所需的嵌套自旋锁计数。
 
 确保 CPU 的 \lstinline{tp} 保存 CPU 的 hartid 有点复杂，因为用户代码可以自由修改 \lstinline{tp}。
 \lstinline{start} 在 CPU 启动序列的早期设置 \lstinline{tp}

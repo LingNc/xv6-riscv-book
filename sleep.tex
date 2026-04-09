@@ -244,7 +244,7 @@ xv6 的管道是使用
 \lstinline{nread}
 和
 \lstinline{nwrite}
-计数从缓冲区读取和写入的字节总数。
+分别计数从缓冲区读取和写入的字节总数。
 缓冲区环绕：
 在
 \lstinline{buf[PIPESIZE-1]}
@@ -276,7 +276,7 @@ xv6 的管道是使用
 的调用同时在两个不同的 CPU 上发生。
 \lstinline{pipewrite}
 \lineref{kernel/pipe.c:/^pipewrite/}
-首先获取管道的锁，该锁保护计数、数据和它们相关的
+首先获取管道的锁，该锁保护计数、数据及其相关的
 不变量。
 \lstinline{piperead}
 \lineref{kernel/pipe.c:/^piperead/}
@@ -411,7 +411,7 @@ Xv6 记录子进程死亡直到 {\tt wait} 观察到它的方式是 {\tt exit} �
 
 \lstinline{kexit} \lineref{kernel/proc.c:/^kexit/} 记录退出状态，
 释放一些资源，调用 \lstinline{reparent} 将任何子进程交给 \lstinline{init} 进程，
-唤醒父进程以防它在 \lstinline{wait} 中，将调用者标记为僵尸，并永久让出 CPU。
+唤醒父进程以防它在 \lstinline{wait} 中睡眠，将调用者标记为僵尸，并永久让出 CPU。
 \lstinline{kexit} 在此过程中持有
 \lstinline{wait_lock} 和 \lstinline{p->lock}。
 它持有 \lstinline{wait_lock} 因为它是
@@ -451,7 +451,7 @@ Xv6 记录子进程死亡直到 {\tt wait} 观察到它的方式是 {\tt exit} �
 \lstinline{kill}
 直接销毁受害者进程会太复杂，因为受害者
 可能在另一个 CPU 上执行，
-可能正在更新内核数据结构的关键序列的中间。
+可能正处于更新内核数据结构的关键序列的中间。
 因此
 \lstinline{kkill}
 做得很少：它只是设置受害者的
