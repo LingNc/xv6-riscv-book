@@ -641,7 +641,7 @@ Plan 9 的
 \lstinline{wait}
 和
 \lstinline{signal}。
-所有这些机制都有相同的特点：睡眠条件由某种在睡眠期间原子丢弃的锁保护。
+所有这些机制都有相同的特点：睡眠条件由某种在睡眠期间原子地释放的锁保护。
 
 xv6 的
 \lstinline{wakeup}
@@ -686,7 +686,7 @@ Xv6 对
 \lstinline{p->killed}
 并尝试唤醒受害者，就在受害者的循环检查
 \lstinline{p->killed}
-但在其调用
+之后但在其调用
 \lstinline{sleep}
 之前。
 如果发生这个问题，受害者直到它等待的条件发生才会注意到
