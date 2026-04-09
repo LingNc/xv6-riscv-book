@@ -14,9 +14,11 @@ $(T)/%.tex: %.tex | src
 
 src:
 	if [ ! -d $(SRC) ]; then \
-		git clone git@github.com:mit-pdos/xv6-riscv.git $(SRC) ; \
+		git clone https://github.com/mit-pdos/xv6-riscv.git $(SRC) ; \
+		git -C $(SRC) checkout xv6-riscv-rev5 ; \
 	else \
-		git -C $(SRC) pull ; \
+		git -C $(SRC) fetch --tags ; \
+		git -C $(SRC) checkout xv6-riscv-rev5 ; \
 	fi; \
 	true
 

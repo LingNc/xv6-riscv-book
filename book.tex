@@ -1,13 +1,62 @@
 \documentclass[12pt]{book}
+
+%% ==================== 用户可配置选项 ====================
+
+%% 1. 字体配置
+\def\CJKMainFont{Noto Serif CJK SC}      % 中文字体
+\def\CJKMainFontBold{Noto Sans CJK SC Bold}
+\def\CJKSansFont{Noto Sans CJK SC}
+\def\CJKMonoFont{Noto Sans Mono CJK SC}
+\def\LatinMainFont{DejaVu Serif}        % 英文字体
+\def\LatinSansFont{DejaVu Sans}
+\def\LatinMonoFont{DejaVu Sans Mono}
+
+%% 2. 页边距配置（单位：cm）
+\def\PageMarginTop{2.5}
+\def\PageMarginBottom{2.5}
+\def\PageMarginLeft{2}
+\def\PageMarginRight{2}
+
+%% 3. 打印模式（双面打印留装订边）
+\def\EnablePrintMode{false}  % true/false
+\def\BindingOffset{0.5cm}
+
+%% 4. 行间距
+\def\LineStretch{1.2}
+
+%% 5. 段间距
+\def\ParagraphSkip{2pt}
+
+%% ==================== 配置结束 ====================
+
+%% 页边距设置
+\usepackage{geometry}
+\usepackage{ifthen}
+
+\ifthenelse{\equal{\EnablePrintMode}{true}}{%
+  %% 打印模式：双面，留装订边
+  \geometry{top=\PageMarginTop cm, bottom=\PageMarginBottom cm,
+             left=\PageMarginLeft cm, right=\PageMarginRight cm,
+             bindingoffset=\BindingOffset,
+             twoside}
+}{%
+  %% 普通模式：单面
+  \geometry{top=\PageMarginTop cm, bottom=\PageMarginBottom cm,
+             left=\PageMarginLeft cm, right=\PageMarginRight cm}
+}
+
 \usepackage{xeCJK}
 \xeCJKsetup{AutoFallBack=true}
-\setCJKmainfont{Noto Serif CJK SC}[BoldFont=Noto Sans CJK SC Bold,ItalicFont=Noto Serif CJK SC]
-\setCJKsansfont{Noto Sans CJK SC}[BoldFont=Noto Sans CJK SC Bold]
-\setCJKmonofont{Noto Sans Mono CJK SC}
+\setCJKmainfont{\CJKMainFont}[BoldFont=\CJKMainFontBold,ItalicFont=\CJKMainFont]
+\setCJKsansfont{\CJKSansFont}[BoldFont=\CJKMainFontBold]
+\setCJKmonofont{\CJKMonoFont}
 
-% 行间距设置
+%% 行间距设置
 \usepackage{setspace}
-\setstretch{1.2}  % 1.2倍行间距，使英文阅读更舒适
+\setstretch{\LineStretch}
+
+%% 段间距设置
+\setlength{\parskip}{\ParagraphSkip}
 
 % 目录格式调整 - 修复编号宽度问题
 \usepackage{tocloft}
@@ -23,22 +72,21 @@
 \usepackage{booktabs}
 \usepackage{url}
 \usepackage{etoolbox}  % for showidx
-\usepackage{fullpage}
 \usepackage{soul}
 % \usepackage{gnuplot-lua-tikz}  % 中文编译：gnuplot-lua-tikz.sty未安装
 \usepackage{tikz}
 \usetikzlibrary{arrows,positioning,calc}
 
 \usepackage{fontspec}
-\setmainfont{DejaVu Serif}
-\setsansfont{DejaVu Sans}
-\setmonofont{DejaVu Sans Mono}
+\setmainfont{\LatinMainFont}
+\setsansfont{\LatinSansFont}
+\setmonofont{\LatinMonoFont}
 
 \usepackage{hyperref}  % should be last
 \hypersetup{unicode=true,
             pdfauthor={Russ Cox, Frans Kaashoek, Robert Morris},
             pdftitle={xv6: a simple, Unix-like teaching operating system},}
-  
+
 \lstset{basicstyle=\small\ttfamily}
 \lstset{morecomment=[is]{[[[}{]]]}}
 \lstset{escapeinside={(*@}{@*)}}
