@@ -202,17 +202,17 @@ xv6 内核为每个进程维护多个状态片段，这些状态汇集于 \index
 \lineref{kernel/entry.S:/^.entry:/}
 开始执行。RISC-V 启动时禁用分页硬件：虚拟地址直接映射到物理地址。
 \lstinline{_entry}
-处的指令设置栈，以便 xv6 可以运行 C 代码。Xv6 在文件
+处的指令设置栈，以便 xv6 可以运行 C 代码。 xv6 在文件
 \lstinline{start.c}
 \lineref{kernel/start.c:/stack0/}
-中声明了此栈的空间
+中为此栈声明了空间
 \lstinline{stack0}。
 \lstinline{_entry}
 处的代码将栈指针寄存器
 \texttt{sp}
 加载为地址
 \lstinline{stack0+4096}，
-即栈顶，因为 RISC-V 上的栈向下增长。现在内核有了栈，
+即栈顶，因为 RISC-V 上的栈向下增长。现在内核拥有栈，
 \lstinline{_entry}
 调用 C 代码的
 \lstinline{start}
@@ -244,7 +244,7 @@ xv6 内核为每个进程维护多个状态片段，这些状态汇集于 \index
 初始化多个设备和子系统后，通过调用
 \lstinline{userinit}
 \lineref{kernel/proc.c:/^userinit/}
-创建第一个进程。所有新创建的进程都在内核中的
+创建首个进程。所有新创建的进程在内核中从
 \lstinline{forkret}
 \lineref{kernel/proc.c:/^forkret/}
 开始执行。作为第一个进程的特殊情况，{\tt forkret}
