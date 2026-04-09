@@ -13,3 +13,13 @@ xv6-riscv-src-booklet/fmt
 *.bbl
 *.blg
 *.out
+
+# Test files
+test-*.tex
+
+# Build artifacts
+*.xdv
+
+# Font files (local only)
+font/*.ttf
+font/*.otf
