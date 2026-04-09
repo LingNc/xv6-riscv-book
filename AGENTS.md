@@ -464,15 +464,15 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 
 | 章节 | 英文行数 | 中文行数 | 审计状态 | 问题数 | 备注 |
 |------|----------|----------|----------|--------|------|
-| unix.tex | ~1116 | ~754 | 🟡 待审计 | - | 等待润色完成 |
-| first.tex | ~701 | ~356 | 🟡 待审计 | - | 等待润色完成 |
-| mem.tex | ~924 | ~521 | 🟡 待审计 | - | 润色中(polisher-2) |
-| trap.tex | ~512 | ~226 | 🟡 待审计 | - | 等待润色完成 |
-| pgfault.tex | ~296 | ~125 | 🟢 通过 | 0 | 审计完成，轻微建议6条 |
-| interrupt.tex | ~305 | ~286 | 🟡 待审计 | - | 等待润色完成 |
-| lock.tex | ~933 | ~683 | 🟡 待审计 | - | 等待润色完成 |
+| unix.tex | ~1116 | ~754 | 🟡 待审计 | - | 润色完成 |
+| first.tex | ~701 | ~356 | 🟡 待审计 | - | 润色完成 |
+| mem.tex | ~924 | ~521 | 🟡 待审计 | - | 润色完成 |
+| trap.tex | ~512 | ~226 | 🟡 待审计 | - | 润色完成 |
+| pgfault.tex | ~296 | ~125 | 🟢 通过 | 6 | 审计完成 |
+| interrupt.tex | ~305 | ~286 | 🟢 通过 | 5 | 审计完成 |
+| lock.tex | ~933 | ~683 | 🟡 待审计 | - | 润色完成 |
 | sched.tex | ~433 | ~370 | 🟡 待审计 | - | 等待润色完成 |
-| sleep.tex | ~843 | ~728 | 🟡 待审计 | - | 等待润色完成 |
+| sleep.tex | ~843 | ~728 | 🟡 待审计 | - | 润色完成 |
 | fs.tex | ~1819 | ~1486 | 🟡 待审计 | - | 翻译中 |
 | lock2.tex | ~231 | ~64 | 🟡 待审计 | - | 翻译中 |
 
@@ -520,8 +520,39 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 
 **技术准确性**: ✅ 无问题
 
-#### interrupt.tex
-*待审计*
+#### interrupt.tex - 审计完成 ✅
+
+**审计日期**: 2026-04-09
+**审计员**: Reviewer
+**状态**: 通过（轻微建议）
+
+**总体评价**: 翻译质量良好，技术概念准确。个别术语和表达有优化空间。
+
+| 行号 | 严重程度 | 原文 | 译文 | 问题描述 | 建议修改 |
+|------|----------|------|------|----------|----------|
+| 4 | 建议 | driver | 驱动程序（driver） | 术语表建议纯中文 | 建议改为"驱动程序"，首次出现时加英文注释 |
+| 23-26 | 建议 | top half / bottom half | 上半部分（top half）/ 下半部分（bottom half） | 术语使用正确，但括号位置建议统一 | 建议改为"上半部分(top half)"，与驱动程序格式统一 |
+| 43 | 建议 | backspace | 退格键 | 技术语境下建议更精确 | 建议改为"退格字符"或"退格键输入" |
+| 224 | 建议 | must be written in the knowledge | 必须知道 | 略显口语化 | 建议改为"必须意识到"或"必须明确" |
+| 225 | 建议 | move from one CPU to another without warning | 从一个CPU移动到另一个CPU | "毫无预警"表述可优化 | 建议改为"在毫无预警的情况下从一个CPU转移到另一个CPU" |
+
+**术语使用检查**:
+- ✅ interrupt - 中断
+- ✅ trap - 陷入
+- ✅ driver - 驱动程序
+- ✅ UART - 通用异步收发传输器
+- ✅ memory-mapped - 内存映射
+- ✅ top half / bottom half - 上半部分/下半部分
+- ✅ I/O concurrency - I/O 并发
+- ✅ DMA (direct memory access) - 直接内存访问(DMA)
+- ✅ polling - 轮询
+- ✅ paging to disk - 分页到磁盘
+- ✅ paged out / paged in - 分页出去/分页进来
+- ✅ eviction / evicting - 驱逐
+- ✅ real-time - 实时
+- ✅ supervisor mode - 监督模式
+
+**技术准确性**: ✅ 无问题
 
 #### lock.tex
 *待审计*

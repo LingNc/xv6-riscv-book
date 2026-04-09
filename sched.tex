@@ -54,10 +54,7 @@ Xv6 在两种情况下切换 CPU 以实现多路复用：
 % why must it be in assembler? why not C?
 % why swtch(), not switch()?
 
-每个线程的 {\tt struct proc} 包含一个 {\tt struct context}，
-用于保存线程不运行时的已保存寄存器。CPU 调度器线程的 {\tt struct context} 位于该 CPU 的 {\tt struct cpu} 中。
-当线程 X 希望切换到线程 Y 时，线程 X 调用 {\tt swtch(\&X's context, \&Y's context)}。{\tt swtch()}
-将当前 CPU 寄存器保存在 X 的上下文中，然后将 Y 的上下文内容加载到 CPU 寄存器中，然后返回。
+每个线程的 {\tt struct proc} 包含一个 {\tt struct context}，用于在线程不运行时保存已保存的寄存器。CPU 调度器线程的 {\tt struct context} 位于该 CPU 的 {\tt struct cpu} 中。当线程 X 希望切换到线程 Y 时，线程 X 调用 {\tt swtch(\&X's context, \&Y's context)}。{\tt swtch()} 将当前 CPU 寄存器保存在 X 的上下文中，然后将 Y 的上下文内容加载到 CPU 寄存器中，然后返回。
 
 以下是 {\tt swtch} 的简化副本：
 
@@ -78,23 +75,9 @@ swtch:
         ret
 \end{verbatim}
 
-{\tt a0} 保存第一个函数参数，{\tt a1} 保存第二个参数；
-在这种情况下，是两个 {\tt struct context} 指针。
-{\tt 16(a0)} 指的是从 {\tt a0} 指向的内存偏移 16 字节；
-参考 {\tt kernel/proc.h} 中 {\tt struct context} 的定义
-\lineref{kernel/proc.h:/^struct.context/}，
-这是称为 {\tt s0} 的结构体字段。
+{\tt a0} 保存第一个函数参数，{\tt a1} 保存第二个参数；在本例中，是两个 {\tt struct context} 指针。{\tt 16(a0)} 指从 {\tt a0} 指向的内存偏移 16 字节；参考 {\tt kernel/proc.h} 中 {\tt struct context} 的定义 \lineref{kernel/proc.h:/^struct.context/}，这是称为 {\tt s0} 的结构体字段。
 
-{\tt swtch} 的 {\tt ret} 返回到哪里？它返回到 {\tt ra} 寄存器指向的指令。
-在线程 X 调用 {\tt swtch()} 切换到 Y 的示例中，当 {\tt ret}
-执行时，{\tt ra} 刚从 Y 的 {\tt struct context} 加载。
-而 Y 的 {\tt struct context} 中的 {\tt ra} 最初是由 Y 调用 {\tt swtch} 时保存的，
-当时 Y 放弃了 CPU。因此 {\tt ret} 返回到 Y 调用 {\tt swtch()} 之后的指令；
-也就是说，X 调用 {\tt swtch()} 返回，就好像从 Y 最初调用 {\tt swtch()} 返回一样。
-而且 {\tt sp} 将是 Y 的栈指针，因为 {\tt swtch} 从 Y 的 {\tt struct context} 加载了 {\tt sp}；
-因此在返回时，Y 将在自己的栈上执行。
-{\tt swtch()} 不需要直接保存或恢复程序计数器；
-保存和恢复 {\tt ra} 就足够了。
+{\tt swtch} 的 {\tt ret} 返回到哪里？它返回到 {\tt ra} 寄存器指向的指令。在线程 X 调用 {\tt swtch()} 切换到 Y 的示例中，当 {\tt ret} 执行时，{\tt ra} 刚从 Y 的 {\tt struct context} 加载。而 Y 的 {\tt struct context} 中的 {\tt ra} 最初是由 Y 调用 {\tt swtch} 时保存的，当时 Y 放弃了 CPU。因此 {\tt ret} 返回到 Y 调用 {\tt swtch()} 之后的指令；也就是说，X 调用 {\tt swtch()} 返回，就好像从 Y 最初调用 {\tt swtch()} 返回一样。而且 {\tt sp} 将是 Y 的栈指针，因为 {\tt swtch} 从 Y 的 {\tt struct context} 加载了 {\tt sp}；因此在返回时，Y 将在自己的栈上执行。{\tt swtch()} 无需直接保存或恢复程序计数器；保存和恢复 {\tt ra} 就足够了。
 
 \lstinline{swtch}
 \lineref{kernel/swtch.S:/swtch/}
