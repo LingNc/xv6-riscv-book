@@ -10,10 +10,10 @@
 父进程对 \lstinline{wait} 的调用可能需要等待子进程退出；
 且读取磁盘的进程需要等待
 磁盘硬件完成读取。
-Xv6 内核在这些情况（以及许多其他情况）下使用一种称为睡眠和唤醒的机制。
-睡眠允许内核线程等待某个条件变为真；
-另一个线程或中断处理程序可以使条件变为真（通常通过修改某些变量），
-然后调用唤醒来指示等待该条件的线程应该恢复执行。
+xv6 内核在这些情况（以及许多其他情况下）使用睡眠和唤醒机制。
+睡眠机制允许内核线程等待特定条件成立；
+另一线程或中断处理程序可使条件成立（通常通过修改某些变量），
+随后调用唤醒，通知等待该条件的线程恢复执行。
 睡眠和唤醒通常被称为
 \indextext{序列协调（sequence coordination）}
 或
@@ -32,8 +32,8 @@ void sleep(void *chan, struct spinlock *lk)
 void wakeup(void *chan)
 \end{lstlisting}
 
-\lstinline{sleep()} 将调用进程标记为 \lstinline{SLEEPING}
-（而不是 \lstinline{RUNNABLE}），并通过上下文切换到调度器来释放 CPU，
+\lstinline{sleep()} 将调用进程置为 \lstinline{SLEEPING}
+（而非 \lstinline{RUNNABLE}），并通过上下文切换至调度器来释放 CPU，
 以便其他进程可以运行。
 \lstinline{chan} 参数称为 \indextext{等待通道（wait channel）}。
 \lstinline{wakeup(chan)} 唤醒所有调用 \lstinline{sleep(chan, ...)} 且使用相同 \lstinline{chan}

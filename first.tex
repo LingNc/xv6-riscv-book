@@ -27,16 +27,16 @@ Chapter~\ref{CH:UNIX}
 \indextext{宏内核（monolithic kernel）}
 的主流设计，许多 Unix 操作系统都采用这种架构。本章还概述了 xv6 进程，即 xv6 中的隔离单元。
 
-Xv6 运行在
+ xv6 运行在
 \indextext{multi-core（多核）}
 多核（multi-core）RISC-V 微处理器上，
-其许多底层功能（例如进程实现）是特定于 RISC-V 的。RISC-V 是 64 位 CPU，xv6 使用 ``LP64'' C 语言编写，这意味着 C 语言中的 long（L）和指针（P）是 64 位，但 {\tt int} 是 32 位。本书假设读者在某些架构上有一定的机器级编程经验，并将在需要时介绍 RISC-V 特定的概念。
+其诸多底层功能（例如进程实现）是特定于 RISC-V 的。RISC-V 是 64 位 CPU，xv6 使用 ``LP64'' C 语言编写，这意味着 C 语言中的 long（L）和指针（P）是 64 位，但 {\tt int} 是 32 位。本书假设读者在某些架构上具备一定机器级编程经验，并将在需要时介绍 RISC-V 特定的概念。
 用户级 ISA~\cite{riscv:user} 和特权架构~\cite{riscv:priv} 文档是完整的规范。
 读者还可以参考
 ``The RISC-V Reader: An Open Architecture
 Atlas''~\cite{riscv}。
 
-完整计算机中的 CPU 被支持硬件包围，其中大部分以 I/O 接口的形式存在。Xv6 为 qemu 的 ``-machine virt'' 选项模拟的支持硬件而编写。这包括 RAM、包含启动代码的 ROM、与用户键盘/屏幕的串行连接，以及用于存储的磁盘。
+完整计算机中的 CPU 被支持硬件包围，其中大部分以 I/O 接口的形式存在。 xv6 为 qemu 的 ``-machine virt'' 选项模拟的支持硬件而编写。包括 RAM、ROM（包含启动代码）、与用户键盘/屏幕的串行连接，以及用于存储的磁盘。
 
 %%
 \section{抽象物理资源}
@@ -188,9 +188,9 @@ xv6（与其他 Unix 操作系统一样）中的隔离单元是
 
 Xv6 使用页表（page table）（由硬件实现）为每个进程提供自己的地址空间。RISC-V 页表将
 \indextext{virtual address}（虚拟地址）
-（RISC-V 指令操作的地址）转换为
+（即 RISC-V 指令操作的地址）转换为
 \indextext{physical address}（物理地址）
-（CPU 发送到主存的地址）。
+（即 CPU 送往主存的地址）。
 
 \begin{figure}[t]
 \centering
@@ -199,23 +199,23 @@ Xv6 使用页表（page table）（由硬件实现）为每个进程提供自己
 \label{fig:as}
 \end{figure}
 
-Xv6 为每个进程维护一个独立的页表，定义该进程的地址空间。如
+xv6 为每个进程维护独立的页表，定义其地址空间。如
 Figure~\ref{fig:as}
 所示，地址空间包括从虚拟地址零开始的进程的
 \indextext{user memory}（用户内存）。
-首先是指令，然后是全局变量，接着是栈，最后是一个``堆''区域（用于 malloc），进程可以根据需要扩展它。
+依次为指令、全局变量、栈，最后是一个``堆''区域（用于 malloc），进程可以根据需要扩展它。
 有多个因素限制进程地址空间的最大大小：RISC-V 上的指针是 64 位宽；硬件在页表中查找虚拟地址时只使用低 39 位；xv6 只使用这 39 位中的 38 位。因此，最大地址是 $2^{38}-1$ = 0x3fffffffff，即 \lstinline{MAXVA}~\lineref{kernel/riscv.h:/define.MAXVA/}。在地址空间的顶部，xv6 放置了一个
 \indextext{trampoline（蹦床）}
 页（4096 字节）和一个
 \indextext{trapframe（陷阱帧）}
 页。Xv6 使用这两个页来转入内核和返回；trampoline 页包含进出内核的转换代码，而 trapframe 是内核保存进程用户寄存器的地方，如 Chapter~\ref{CH:TRAP} 所述。
 
-xv6 内核为每个进程维护多个状态片段，这些状态收集在
+xv6 内核为每个进程维护多个状态片段，这些状态汇集于
 \indexcode{struct proc}
 \lineref{kernel/proc.h:/^struct.proc/} 中。
-进程最重要的内核状态是其页表、内核栈和运行状态。我们将使用
+进程最重要的内核状态是其页表、内核栈和运行状态。我们使用
 \indexcode{p->xxx}
-的表示法来引用
+的表示法引用
 \lstinline{proc}
 结构的元素；例如，
 \indexcode{p->pagetable} 是指向进程页表的指针。

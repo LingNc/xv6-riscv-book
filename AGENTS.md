@@ -468,7 +468,7 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 | first.tex | ~701 | ~356 | 🟡 待审计 | - | 等待润色完成 |
 | mem.tex | ~924 | ~521 | 🟡 待审计 | - | 润色中(polisher-2) |
 | trap.tex | ~512 | ~226 | 🟡 待审计 | - | 等待润色完成 |
-| pgfault.tex | ~296 | ~125 | 🟡 待审计 | - | 润色完成 |
+| pgfault.tex | ~296 | ~125 | 🟢 通过 | 0 | 审计完成，轻微建议6条 |
 | interrupt.tex | ~305 | ~286 | 🟡 待审计 | - | 等待润色完成 |
 | lock.tex | ~933 | ~683 | 🟡 待审计 | - | 等待润色完成 |
 | sched.tex | ~433 | ~370 | 🟡 待审计 | - | 等待润色完成 |
@@ -494,8 +494,31 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 #### trap.tex
 *待审计*
 
-#### pgfault.tex
-*待审计 - 润色完成*
+#### pgfault.tex - 审计完成 ✅
+
+**审计日期**: 2026-04-09
+**审计员**: Reviewer
+**状态**: 通过（轻微建议）
+
+**总体评价**: 翻译质量良好，技术概念准确，术语使用规范。个别表达有优化空间。
+
+| 行号 | 严重程度 | 原文 | 译文 | 问题描述 | 建议修改 |
+|------|----------|------|------|----------|----------|
+| 5-6 | 建议 | raises a page-fault exception | 会引发页错误异常 | "引发"可用，但"触发"更常见于技术文档 | 建议改为"触发页错误异常" |
+| 6 | 建议 | fetches of instructions to be executed | 取指执行指令引起 | 表述略显生硬 | 建议改为"指令预取引起" |
+| 31 | 建议 | copy-on-write fork | 写时复制 fork | 术语表中建议纯中文 | 建议改为"写时复制fork"（英文紧跟，不加空格） |
+| 62 | 建议 | book-keeping | 记账 | 技术语境下"簿记"更准确 | 建议改为"簿记" |
+| 68 | 建议 | the bulk of the memory | 大部分内存 | bulk有"主体"之意 | 可译为"内存的主体部分" |
+| 86 | 建议 | Other features that combine... | 结合分页和页错误异常的其他功能... | 句式略显生硬 | 建议改为"其他结合了分页与页错误异常的功能..." |
+
+**术语使用检查**:
+- ✅ PTE标志位、寄存器名保持原文正确
+- ✅ lazy allocation - 惰性分配（符合术语表）
+- ✅ copy-on-write fork - 写时复制 fork
+- ✅ demand paging - 按需分页
+- ✅ memory-mapped files - 内存映射文件
+
+**技术准确性**: ✅ 无问题
 
 #### interrupt.tex
 *待审计*
