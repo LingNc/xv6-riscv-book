@@ -187,7 +187,7 @@ Xv6 的
 和
 \lstinline{wakeup}
 的锁定规则为什么能确保即将睡眠的进程不会错过并发的唤醒？
-即将睡眠的进程在检查条件之前直到标记自己为 \texttt{SLEEPING} 之后持有
+即将睡眠的进程在检查条件之前直到标记自己为 \texttt{SLEEPING} 之后，持有
 条件锁或它自己的
 \lstinline{p->lock}
 或两者；
