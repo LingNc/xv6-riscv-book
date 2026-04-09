@@ -1,7 +1,7 @@
 \chapter{中断和设备驱动程序}
 \label{CH:INTERRUPT}
 
-\indextext{驱动程序（driver）}
+\indextext{驱动程序}
 是操作系统中管理特定设备的代码：
 它配置设备硬件，
 指示设备执行操作，
@@ -43,7 +43,7 @@
 串口硬件接收人类输入的字符。
 控制台驱动程序一次累积一行输入，
 处理特殊输入字符如
-退格键和控制键-u。用户进程，如 shell，使用
+退格字符和控制键-u。用户进程，如 shell，使用
 {\tt read} 系统调用从控制台获取输入行。
 当你在 QEMU 中向 xv6 输入时，你的按键通过
 QEMU 模拟的 UART 硬件传递给 xv6。
@@ -117,7 +117,7 @@ xv6 的陷入处理程序。
 {\tt consoleintr} 的工作是在
 {\tt cons.buf} 中累积输入字符
 直到一整行到达。
-{\tt consoleintr} 特殊处理退格键和一些其他字符。
+{\tt consoleintr} 特殊处理退格字符和一些其他字符。
 当新行到达时，{\tt consoleintr} 唤醒
 等待的 {\tt consoleread}（如果有的话）。
 
