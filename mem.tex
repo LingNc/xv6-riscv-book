@@ -17,7 +17,7 @@
 作为提醒，RISC-V 指令（用户和内核）操作虚拟地址（virtual address）。机器的 RAM 或物理内存（physical memory）使用物理地址索引。RISC-V 页表硬件通过将每个虚拟地址映射到物理地址来连接这两种地址。
 
 \begin{figure}[t]
-\center
+\centering
 \includegraphics[scale=0.5]{fig/riscv_address.pdf}
 \caption{平坦页表将虚拟地址映射到物理地址的抽象视图。}
 \label{fig:riscv_address}
@@ -29,7 +29,7 @@ Figure~\ref{fig:riscv_address}
 显示了此过程，页表的逻辑视图是 PTE 的简单数组（RISC-V 页表实际上是一棵树；参见 Figure~\ref{fig:riscv_pagetable} 了解完整故事）。页表使操作系统能够以 4096 ($2^{12}$) 字节对齐块的粒度控制虚拟到物理地址转换。这样的块称为 \indextext{page}（页）。
 
 \begin{figure}[t]
-\center
+\centering
 \includegraphics[scale=0.5]{fig/riscv_pagetable.pdf}
 \caption{RISC-V 地址转换细节。}
 \label{fig:riscv_pagetable}
@@ -113,14 +113,7 @@ QEMU 模拟一台计算机，包括从物理地址 \texttt{0x80000000} 开始并
   virtual address space of the kernel: once at the top of the virtual
   address space and once with a direct mapping.
 
-\item The kernel stack pages.  Each process has its own kernel stack,
-  which is mapped at a high kernel virtual address
-  so that below it xv6 can leave an unmapped \indextext{guard
-    page}.  The guard page's PTE is invalid (i.e.,
-  \lstinline{PTE_V} is not set), so that if the kernel overflows
-  a kernel stack, it will likely cause a page fault and the kernel will panic.
-  Without a guard page an overflowing stack would overwrite other kernel memory,
-  resulting in incorrect operation. A panic crash is preferable.
+\item 内核栈页。每个进程都有自己的内核栈，映射在较高的内核虚拟地址处，因此在其下方 xv6 可以保留一个未映射的\indextext{保护页}。保护页的 PTE 是无效的（即\lstinline{PTE_V}未设置），因此如果内核溢出内核栈，很可能会引发页故障，导致内核崩溃。如果没有保护页，溢出的栈将覆盖其他内核内存，导致错误操作。崩溃重启是可取的。
 
 \end{itemize}
 
@@ -299,43 +292,21 @@ Xv6 使用内核末尾和
 并将空闲列表设置为
 \lstinline{r}。
 \indexcode{kalloc}
-removes and returns the first element in the free list.
+从空闲列表中移除并返回第一个元素。
 
-\section{Process address space}
+\section{进程地址空间}
 
-Each process has its own page table, and when xv6 switches between
-processes, it also changes page tables.
-Figure~\ref{fig:processlayout} shows a process's address space in more
-detail than Figure~\ref{fig:as}.  A process's user address space
-starts at zero and in principle ends at
+每个进程都有自己的页表，当 xv6 在进程之间切换时，它也会更改页表。
+Figure~\ref{fig:processlayout} 比 Figure~\ref{fig:as} 更详细地显示了进程的地址空间。进程的用户地址空间从零开始，理论上结束于
 \texttt{MAXVA}
 ({\tt 0x4000000000})
-\lineref{kernel/riscv.h:/MAXVA/}, though in practice
-only a small fraction of this is mapped to physical memory.
+\lineref{kernel/riscv.h:/MAXVA/}，尽管实际上只有其中一小部分映射到物理内存。
 
-A process's address space consists of pages that contain the text of
-the program (which xv6 maps with the permissions \lstinline{PTE_R},
-\lstinline{PTE_X}, and \lstinline{PTE_U}), pages that contain the
-pre-initialized data of the program, a page for the stack, and pages
-for the heap.  Xv6 maps the data, stack, and heap with the permissions
-\lstinline{PTE_R}, \lstinline{PTE_W}, and \lstinline{PTE_U}.
+进程的地址空间由以下页面组成：包含程序文本的页面（xv6 使用权限 \lstinline{PTE_R}、\lstinline{PTE_X} 和 \lstinline{PTE_U} 映射）、包含程序预初始化数据的页面、栈页面以及堆页面。Xv6 使用权限 \lstinline{PTE_R}、\lstinline{PTE_W} 和 \lstinline{PTE_U} 映射数据、栈和堆。
 
-Using permissions within a user address space is a common technique to
-harden a user process.  If the text were mapped with
-\lstinline{PTE_W}, then a process could accidentally modify its own
-program; for example, a programming error may cause the program to
-write to a null pointer, modifying instructions at address 0, and then
-continue running, perhaps creating more havoc.  To detect such errors
-immediately, xv6 maps the text without \lstinline{PTE_W}; if a program
-accidentally attempts to store to address 0, the hardware will refuse
-to execute the store and raises a page fault (see
-Chapter~\ref{CH:TRAP}).  The kernel then kills the process and
-prints out an informative message so that the developer can track down
-the problem.
+在用户地址空间内使用权限是强化用户进程的常用技术。如果文本使用 \lstinline{PTE_W} 映射，那么进程可能会意外修改自己的程序；例如，编程错误可能导致程序写入空指针，修改地址 0 处的指令，然后继续运行，可能造成更大的破坏。为了立即检测此类错误，xv6 在不使用 \lstinline{PTE_W} 的情况下映射文本；如果程序意外尝试存储到地址 0，硬件将拒绝执行存储并引发页错误（参见 Chapter~\ref{CH:TRAP}）。然后内核杀死进程并打印出信息性消息，以便开发人员可以追踪问题。
 
-Similarly, by mapping data without \lstinline{PTE_X}, a user program
-cannot accidentally jump to an address in the program's data and start
-executing at that address.
+同样，通过在不使用 \lstinline{PTE_X} 的情况下映射数据，用户程序不能意外地跳转到程序数据中的地址并从该地址开始执行。
 
 在现实世界中，通过仔细设置权限来强化进程也有助于防御安全攻击。攻击者可能向程序（例如 Web 服务器）提供精心构造的输入，触发程序中的错误，希望将该错误转化为漏洞利用~\cite{aleph:smashing}。仔细设置权限和其他技术，如用户地址空间布局的随机化，使此类攻击更难。
 
@@ -348,7 +319,7 @@ executing at that address.
 我们在这里看到了一些页表使用的很好的例子。首先，不同进程的页表将用户地址转换为不同的物理内存页，因此每个进程都有私有的用户内存。其次，每个进程将其内存视为具有从零开始的连续虚拟地址，而进程的物理内存可以是非连续的。第三，内核在用户地址空间顶部映射一个具有 trampoline 代码的页（没有 \lstinline{PTE_U}），因此单个物理内存页出现在所有地址空间中，但只能由内核使用。
 
 \begin{figure}[t]
-\center
+\centering
 \includegraphics[scale=0.5]{fig/processlayout.png}
 \caption{进程的用户地址空间及其初始栈。}
 \label{fig:processlayout}
@@ -400,9 +371,9 @@ executing at that address.
 使用
 \indexcode{walkaddr}
 来查找分配的内存的物理地址，以便写入
-each page of the ELF segment, and
+ELF 段的每一页，并使用
 \indexcode{readi}
-to read from the file.
+从文件中读取。
 
 \indexcode{/init}
 的程序段头，

@@ -32,7 +32,7 @@ Figure~\ref{fig:os}
 来确保在用户空间中执行的每个进程只能访问自己的内存。内核以实施这些保护所需的硬件特权执行；用户程序在没有这些特权的情况下执行。当用户程序调用系统调用时，硬件提升特权级别并开始执行内核中预先安排的函数。
 
 \begin{figure}[t]
-\center
+\centering
 \includegraphics[scale=0.5]{fig/os.pdf}
 \caption{内核和两个用户进程。}
 \label{fig:os}
@@ -69,7 +69,7 @@ xv6 进程由用户空间内存（指令、数据和栈）和内核私有的每�
 \indexcode{PID}（PID）。
 
 \begin{figure}[t]
-\center
+\centering
 \begin{tabular}{ll}
 {\bf 系统调用} & {\bf 描述} \\
 \midrule

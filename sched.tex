@@ -53,7 +53,7 @@ Xv6 在两种情况下将每个 CPU 从一个进程切换到另一个进程来�
 然后调度器线程选择一个不同的进程的内核线程来运行，并上下文切换到该线程。
 
 \begin{figure}[t]
-\center
+\centering
 \includegraphics[scale=0.5]{fig/switch.pdf}
 \caption{从一个用户进程切换到另一个用户进程。在此示例中，xv6 运行在一个 CPU 上（因此有一个调度器线程）。}
 \label{fig:switch}

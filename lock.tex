@@ -35,7 +35,7 @@ Xv6 根据情况使用多种并发控制技术；还有更多可能的。本章�
 %% 
 
 \begin{figure}[t]
-\center
+\centering
 \includegraphics[scale=0.8]{fig/smp.pdf}
 \caption{简化的 SMP 架构}
 \label{fig:smp}
@@ -70,7 +70,7 @@ Figure~\ref{fig:smp} 更详细地说明了设置：空闲页面链表位于两�
 \end{lstlisting}
 
 \begin{figure}[t]
-\center
+\centering
 \includegraphics[scale=0.5]{fig/race.pdf}
 \caption{竞态示例}
 \label{fig:race}
@@ -80,8 +80,10 @@ Figure~\ref{fig:smp} 更详细地说明了设置：空闲页面链表位于两�
 如果两个 CPU 执行
 \lstinline{push}
 在同一时间，
-两者都可能在线路~ef{line:next} 处执行，如图~\ref{fig:smp} 所示，
-在任一执行线路~ef{line:list} 之前，这导致
+两者都可能在线路~
+ef{line:next} 处执行，如图~\ref{fig:smp} 所示，
+在任一执行线路~
+ef{line:list} 之前，这导致
 如图~\ref{fig:race} 所示的错误结果。
 然后会有两个
 列表元素，其
@@ -355,24 +357,24 @@ Figure~\ref{fig:locktable}
 列出了 xv6 中的所有锁。
 
 \begin{figure}[t]
-\center
+\centering
 \begin{tabular}{ll}
-{\bf 锁} & {\bf 描述} \\\
+{\bf 锁} & {\bf 描述} \\
 \midrule
-bcache.lock & 保护块缓冲区缓存条目的分配 \\\
-cons.lock & 串行化控制台输入的读取处理 \\\
-tx\_lock & 串行化对控制台 (uart) 输出硬件的访问 \\\
-ftable.lock & 串行化文件表中 struct file 的分配 \\\
-itable.lock & 保护内存中 inode 条目的分配 \\\
-vdisk\_lock & 串行化对磁盘硬件和 DMA 描述符队列的访问 \\\
-kmem.lock & 串行化内存分配 \\\
-log.lock & 串行化事务日志的操作 \\\
-pipe's pi->lock & 串行化每个管道的操作 \\\
-pid\_lock & 串行化 next_pid 的增量 \\\
-proc's p->lock & 串行化进程状态的更改 \\\
-wait\_lock & 帮助 wait 避免丢失唤醒 \\\
-tickslock & 串行化 ticks 计数器的操作 \\\
-inode's ip->lock & 串行化每个 inode 及其内容的操作 \\\
+bcache.lock & 保护块缓冲区缓存条目的分配 \\
+cons.lock & 串行化控制台输入的读取处理 \\
+tx\_lock & 串行化对控制台 (uart) 输出硬件的访问 \\
+ftable.lock & 串行化文件表中 struct file 的分配 \\
+itable.lock & 保护内存中 inode 条目的分配 \\
+vdisk\_lock & 串行化对磁盘硬件和 DMA 描述符队列的访问 \\
+kmem.lock & 串行化内存分配 \\
+log.lock & 串行化事务日志的操作 \\
+pipe's pi->lock & 串行化每个管道的操作 \\
+pid\_lock & 串行化 next\_pid 的增量 \\
+proc's p->lock & 串行化进程状态的更改 \\
+wait\_lock & 帮助 wait 避免丢失唤醒 \\
+tickslock & 串行化 ticks 计数器的操作 \\
+inode's ip->lock & 串行化每个 inode 及其内容的操作 \\
 buf's b->lock & 串行化每个块缓冲区的操作 \\
 \end{tabular}
 \caption{xv6 中的锁}
@@ -386,12 +388,11 @@ buf's b->lock & 串行化每个块缓冲区的操作 \\
 
 假设在 CPU C1 和 C2 上运行的函数都有一个点，每个都需要持有锁 A 和锁 B，并且它们以不同的顺序获取它们：
 
-\begin{center}
+\centering
   \input{fig/order.tex}
-\end{center}
 
 运气不好的话，C1 和 C2 可能都在完全相同的时刻执行它们的第一次获取；两者都可能成功，因为它们要求的是不同的锁。但然后 C1 和 C2 都必须在它们对 {\tt acquire()} 的第二次调用中等待，因为两个锁都已被另一个 CPU 持有。因为两个 CPU 都在等待对方，所以谁都不会释放锁，两者都将永远等待。这种情况被称为
-\indextext{死锁}。
+\indextext{死锁（deadlock）}。
 
 C1/C2 示例中的关键问题是两个 CPU 以不同的顺序获取锁。如果它们都先尝试获取 A，一个会先获取 A 然后 B 然后释放它们，然后另一个 CPU 可以继续。更一般地说，锁代码必须遵循以下规则以避免死锁：所有持有多个锁的代码路径必须以相同的顺序获取锁。这种全局锁获取顺序的需要意味着锁实际上是每个函数规范的一部分：调用者必须以导致锁按约定顺序获取的方式调用函数。
 

@@ -7,21 +7,11 @@
 
 缓存项通常对加锁是一个挑战。例如，文件系统的块缓存 \lineref{kernel/bio.c:/^struct/} 存储最多 {\tt NBUF} 个磁盘块的副本。给定磁盘块在缓存中最多只有一个副本是至关重要的；否则，不同的进程可能会对应该是同一块的不同副本做出冲突的更改。每个缓存块存储在 {\tt struct buf} \fileref{kernel/buf.h} 中。{\tt struct buf} 有一个锁字段，有助于确保一次只有一个进程使用给定的磁盘块。然而，这个锁是不够的：如果块根本不在缓存中，两个进程想要同时使用它怎么办？没有 {\tt struct buf}（因为块尚未缓存），因此没有什么可以锁定的。Xv6 通过将额外的锁（{\tt bcache.lock}）与缓存块的身份集相关联来处理这种情况。需要检查块是否已缓存的代码（例如，{\tt bget} \lineref{kernel/bio.c:/^bget/}）或更改缓存块集的代码必须持有 {\tt bcache.lock}；在该代码找到块和它需要的 {\tt struct buf} 之后，它可以释放 {\tt bcache.lock} 并只锁定特定的块。这是一种常见模式：一个锁用于项集，加上每个项一个锁。
 
-通常，获取锁的同一个函数会释放它。但更精确的看法是，锁在必须表现为原子的序列开始时获取，在该序列结束时释放。 If the sequence starts and ends in different functions,
-or different threads, or on different CPUs, then the lock acquire and
-release must do the same. The function of the lock is to force
-other uses to wait, not to pin a piece of data to a particular agent. One
-example is the {\tt acquire} in {\tt yield}
-\lineref{kernel/proc.c:/^yield/}, which is released in the scheduler
-thread rather than in the acquiring process. Another example is the
-{\tt acquiresleep} in {\tt ilock} \lineref{kernel/fs.c:/^ilock/}; this
-code often sleeps while reading the disk; it may wake up on a
-different CPU, which means the lock may be acquired
-and released on different CPUs.
+通常，获取锁的同一个函数会释放它。但更精确的看法是，锁在必须表现为原子的序列开始时获取，在该序列结束时释放。如果序列在不同的函数、不同的线程或不同的 CPU 上开始和结束，那么锁的获取和释放也必须这样做。锁的作用是强制其他使用者等待，而不是将某段数据固定到特定的执行者。一个例子是 {\tt yield} 中的 {\tt acquire}\lineref{kernel/proc.c:/^yield/}，它是在调度器线程中释放的，而不是在获取它的进程中。另一个例子是 {\tt ilock} 中的 {\tt acquiresleep}\lineref{kernel/fs.c:/^ilock/}；这段代码在读取磁盘时经常睡眠；它可能在不同的 CPU 上唤醒，这意味着锁可能在不同的 CPU 上获取和释放。
 
 释放受嵌入在对象中的锁保护的对象是一项微妙的业务，因为拥有锁不足以保证释放是正确的。问题情况发生在其他线程在 {\tt acquire} 中等待使用对象时；释放对象隐式释放嵌入的锁，这将导致等待线程故障。一种解决方案是跟踪对对象的引用数量，以便仅在最后一个引用消失时才释放它。参见 {\tt pipeclose} \lineref{kernel/pipe.c:/^pipeclose/} 作为示例；{\tt pi->readopen} 和 {\tt pi->writeopen} 跟踪管道是否有文件描述符引用它。
 
-通常，你会在对相关项目集进行读写序列周围看到锁；锁确保其他线程只看到已完成的更新序列（只要它们也加锁）。如果更新是对单个共享变量的简单写入呢？例如，\texttt{setkilled} 和 \texttt{killed} \lineref{kernel/proc.c:/^setkilled/} 在它们对 \lstinline{p->killed} 的简单使用周围加锁。如果没有锁，一个线程可能在另一个线程读取它的同时写入 \lstinline{p->killed}。这是一个 \indextextx{竞态}，C 语言规范说竞态产生 \indextext{未定义行为}，这意味着程序可能崩溃或产生不正确的结果。锁防止竞态并避免未定义行为。
+通常，你会在对相关项目集进行读写序列周围看到锁；锁确保其他线程只看到已完成的更新序列（只要它们也加锁）。如果更新是对单个共享变量的简单写入呢？例如，\texttt{setkilled} 和 \texttt{killed} \lineref{kernel/proc.c:/^setkilled/} 在它们对 \lstinline{p->killed} 的简单使用周围加锁。如果没有锁，一个线程可能在另一个线程读取它的同时写入 \lstinline{p->killed}。这是一个 \indextextx{竞态（race condition）}，C 语言规范说竞态产生 \indextext{未定义行为（undefined behavior）}，这意味着程序可能崩溃或产生不正确的结果。锁防止竞态并避免未定义行为。
 
 竞态可能破坏程序的一个原因是，如果没有锁或等效构造，编译器可能生成以与原始 C 代码截然不同的方式读写内存的机器代码。例如，调用 \texttt{killed} 的线程的机器代码可能将 \lstinline{p->killed} 复制到寄存器，并且只读取那个缓存值；这意味着该线程可能永远看不到对 \lstinline{p->killed} 的任何写入。锁防止这种缓存。
 
@@ -57,7 +47,7 @@ Xv6 中的管道是适度良好并行性的一个例子。每个管道有自己�
 
 上下文切换是一个更复杂的例子。两个内核线程，每个在自己的 CPU 上执行，可以同时调用 {\tt yield}、{\tt sched} 和 {\tt swtch}，调用将并行执行。线程各自持有一个锁，但它们是不同的锁，因此它们不必等待对方。然而，一旦进入 {\tt scheduler}，两个 CPU 可能在搜索 {\tt RUNNABLE} 进程表时冲突在锁上。也就是说，xv6 可能在上下文切换期间从多个 CPU 获得性能提升，但也许不如它可能获得的那么多。
 
-另一个例子是来自不同 CPU 上不同进程的 {\tt fork} 的并发调用。调用可能不得不等待彼此的 {\tt pid_lock} 和 {\tt kmem.lock}，以及在进程表中搜索 {\tt UNUSED} 进程所需的每个进程锁。另一方面，两个 fork 进程可以完全并行地复制用户内存页和格式化页表页。
+另一个例子是来自不同 CPU 上不同进程的 {\tt fork} 的并发调用。调用可能不得不等待彼此的 {\tt pid\_lock} 和 {\tt kmem\_lock}，以及在进程表中搜索 {\tt UNUSED} 进程所需的每个进程锁。另一方面，两个 fork 进程可以完全并行地复制用户内存页和格式化页表页。
 
 上述每个例子中的锁定方案在某些情况下牺牲了并行性能。在每种情况下，可以使用更复杂的设计获得更多并行性。是否值得取决于细节：相关操作被调用的频率，代码在持有争用锁时花费多长时间，多少 CPU 可能同时运行冲突操作，代码的其他部分是否是更具限制性的瓶颈。很难猜测给定的锁定方案是否可能导致性能问题，或者新设计是否显著更好，因此通常需要在实际工作负载上进行测量。
 

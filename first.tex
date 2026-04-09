@@ -28,7 +28,7 @@ Chapter~\ref{CH:UNIX}
 的主流设计，许多 Unix 操作系统都采用这种架构。本章还概述了 xv6 进程，即 xv6 中的隔离单元。
 
 Xv6 运行在
-\indextext{multi-core}
+\indextext{multi-core（多核）}
 多核（multi-core）RISC-V 微处理器上，
 其许多底层功能（例如进程实现）是特定于 RISC-V 的。RISC-V 是 64 位 CPU，xv6 使用 ``LP64'' C 语言编写，这意味着 C 语言中的 long（L）和指针（P）是 64 位，但 {\tt int} 是 32 位。本书假设读者在某些架构上有一定的机器级编程经验，并将在需要时介绍 RISC-V 特定的概念。
 用户级 ISA~\cite{riscv:user} 和特权架构~\cite{riscv:priv} 文档是完整的规范。
@@ -109,7 +109,7 @@ Chapter~\ref{CH:UNIX}
 旨在减少内核中错误的发生。其想法是将绝对最少的功能放入内核本身，这样少量代码在监管者模式下执行，内核易于理解和分析其正确性。操作系统的大部分作为用户级服务器进程运行。例如，文件系统代码将作为服务器进程执行，在用户模式而非监管者模式下。
 
 \begin{figure}[t]
-\center
+\centering
 \includegraphics[scale=0.5]{fig/mkernel.pdf}
 \caption{A microkernel with a file-system server}
 \label{fig:mkernel}
@@ -135,7 +135,7 @@ Xv6 被实现为宏内核，与大多数 Unix 操作系统一样。因此，xv6 
 \section{代码：xv6 组织结构}
 
 \begin{figure}[t]
-\center
+\centering
 \begin{tabular}{l|l|l}
 & {\bf 文件} & {\bf 描述} \\
 \midrule
@@ -205,9 +205,9 @@ Figure~\ref{fig:as}
 \indextext{user memory}（用户内存）。
 首先是指令，然后是全局变量，接着是栈，最后是一个``堆''区域（用于 malloc），进程可以根据需要扩展它。
 有多个因素限制进程地址空间的最大大小：RISC-V 上的指针是 64 位宽；硬件在页表中查找虚拟地址时只使用低 39 位；xv6 只使用这 39 位中的 38 位。因此，最大地址是 $2^{38}-1$ = 0x3fffffffff，即 \lstinline{MAXVA}~\lineref{kernel/riscv.h:/define.MAXVA/}。在地址空间的顶部，xv6 放置了一个
-\indextext{trampoline}
+\indextext{trampoline（蹦床）}
 页（4096 字节）和一个
-\indextext{trapframe}
+\indextext{trapframe（陷阱帧）}
 页。Xv6 使用这两个页来转入内核和返回；trampoline 页包含进出内核的转换代码，而 trapframe 是内核保存进程用户寄存器的地方，如 Chapter~\ref{CH:TRAP} 所述。
 
 xv6 内核为每个进程维护多个状态片段，这些状态收集在
@@ -223,7 +223,7 @@ xv6 内核为每个进程维护多个状态片段，这些状态收集在
 此时，请阅读 {\tt kernel/proc.h}，其中定义了 {\tt struct proc}。xv6 代码比本书更重要，读者应该优先理解代码，并在需要时查阅本书来澄清代码。某些代码的用途可能一开始不明显，但进一步阅读和搜索代码会有所帮助。请随意探索和修改代码。
 
 每个进程都有一个控制线程（或简称为
-\indextext{thread}
+\indextext{thread（线程）}
 线程），持有执行该进程所需的状态。在任何时候，线程可能在 CPU 上执行，或挂起（不执行，但能够在将来恢复执行）。要在进程之间切换 CPU，内核挂起当前在该 CPU 上运行的线程并保存其状态，然后恢复另一个进程之前挂起的线程的状态。线程的大部分状态（局部变量、函数调用返回地址）存储在线程的栈中。每个进程有两个栈：用户栈和内核栈（\indexcode{p->kstack}）。当进程执行用户指令时，只使用其用户栈，其内核栈为空。当进程进入内核（进行系统调用或中断）时，内核代码在进程的内核栈上执行；当进程在内核中时，其用户栈仍然包含保存的数据，但不被主动使用。进程的线程在使用用户栈和内核栈之间交替。内核栈是独立的（并受用户代码保护），这样即使进程破坏了其用户栈，内核也可以执行。
 
 进程的用户代码可以通过执行 RISC-V \indexcode{ecall}
@@ -297,7 +297,7 @@ xv6 内核为每个进程维护多个状态片段，这些状态收集在
 并将所有中断和异常委托给监管者模式。
 
 \lstinline{main}
-\lineref{kernel/main.c:/^main}
+\lineref{kernel/main.c:/^main/}
 初始化多个设备和子系统后，通过调用
 \lstinline{userinit}
 \lineref{kernel/proc.c:/^userinit/}
