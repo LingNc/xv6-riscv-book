@@ -399,7 +399,7 @@ C1/C2 示例中的关键问题是两个 CPU 以不同的顺序获取锁。如果
 
 Xv6 有许多长度为二的锁顺序链，涉及每个进程的锁（每个
 \lstinline{struct proc}
-中的锁）由于
+中的锁），这是由于
 \lstinline{sleep}
 的工作方式（参见 Chapter~\ref{CH:SLEEP}）。例如，
 \lstinline{consoleintr}

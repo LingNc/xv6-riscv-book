@@ -47,7 +47,7 @@ Atlas''~\cite{riscv}。
 \lstinline{exec}
 还为用户提供了使用文件系统存储可执行程序映像的便利。
 
-Unix 进程之间的许多交互形式通过文件描述符（file descriptor）进行。文件描述符不仅抽象了许多细节（例如，管道或文件中的数据存储位置），而且其定义方式也简化了交互。例如，若管道中的一个应用程序退出或失败，内核会自动为管道中的下一个进程生成文件结束信号。
+Unix 进程之间的许多交互形式通过文件描述符（file descriptor）进行。文件描述符不仅抽象了大量细节（例如，管道或文件中的数据存储位置），而且其定义方式简化了交互。例如，若管道中的一个应用程序退出或失败，内核会自动为管道中的下一个进程生成文件结束信号。
 
 Figure~\ref{fig:api}
 中的系统调用接口经过精心设计，既提供了程序员便利，又提供了强隔离的可能性。Unix 接口并非抽象资源的唯一方式，但已被证明是一种优秀的方式。
@@ -239,24 +239,9 @@ xv6 内核为每个进程维护多个状态片段，这些状态汇集于 \index
 来禁用监管者模式中的虚拟地址转换，
 并将所有中断和异常委托给监管者模式。
 
-\lstinline{main}
-\lineref{kernel/main.c:/^main/}
-初始化多个设备和子系统后，通过调用
-\lstinline{userinit}
-\lineref{kernel/proc.c:/^userinit/}
-创建首个进程。所有新创建的进程在内核中从
-\lstinline{forkret}
-\lineref{kernel/proc.c:/^forkret/}
-开始执行。作为第一个进程的特殊情况，{\tt forkret}
-调用 {\tt kexec} 加载用户程序 {\tt /init}。
+\lstinline{main} \lineref{kernel/main.c:/^main/} 初始化多个设备和子系统后，通过调用 \lstinline{userinit} \lineref{kernel/proc.c:/^userinit/} 创建首个进程。所有新创建的进程在内核中从 \lstinline{forkret} \lineref{kernel/proc.c:/^forkret/} 开始执行。作为第一个进程的特殊情况，{\tt forkret} 调用 {\tt kexec} 加载用户程序 {\tt /init}。
 
-调用
-\lstinline{kexec}
-后，{\tt forkret} 在
-\lstinline{/init} 进程中返回用户空间。
-\lstinline{init}
-\lineref{user/init.c:/^main/}
-在需要时创建新的控制台设备文件，然后将其打开为文件描述符 0、1 和 2。然后它在控制台上启动 shell。系统已启动。
+调用 \lstinline{kexec} 后，{\tt forkret} 在 \lstinline{/init} 进程中返回用户空间。\lstinline{init} \lineref{user/init.c:/^main/} 在需要时创建新的控制台设备文件，然后将其打开为文件描述符 0、1 和 2。然后它在控制台上启动 shell。系统已启动。
 
 \section{安全模型}
 
@@ -276,10 +261,7 @@ xv6 内核为每个进程维护多个状态片段，这些状态汇集于 \index
 \section{现实世界}
 %%
 
-大多数操作系统都采用了进程概念，大多数进程看起来与 xv6 的进程相似。然而，现代操作系统支持一个进程内的多个线程，以允许单个进程利用多个 CPU。在进程中支持多个线程需要相当多的机制，而 xv6 没有这些机制，通常包括接口更改（例如，Linux 的
-\lstinline{clone}，
-\lstinline{fork}
-的变体），以控制进程线程共享的方面。
+大多数操作系统都采用了进程概念，大多数进程看起来与 xv6 的进程相似。然而，现代操作系统支持一个进程内的多个线程，以允许单个进程利用多个 CPU。在进程中支持多个线程需要相当多的机制，而 xv6 缺少这些机制，通常包括接口更改（例如，Linux 的 \lstinline{clone}、\lstinline{fork} 的变体），以控制进程线程共享的方面。
 %%
 \section{练习}
 %%
