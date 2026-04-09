@@ -105,13 +105,7 @@ QEMU 模拟一台计算机，包括从物理地址 \texttt{0x80000000} 开始并
 
 \begin{itemize}
   
-\item The trampoline page. It is mapped at the top of the virtual
-  address space; user page tables have this same mapping.
-  Chapter~\ref{CH:TRAP} discusses the role of the trampoline
-  page, but we see here an interesting use case of page tables; a
-  physical page (holding the trampoline code) is mapped twice in the
-  virtual address space of the kernel: once at the top of the virtual
-  address space and once with a direct mapping.
+\item trampoline 页。它映射在虚拟地址空间的顶部；用户页表具有相同的映射。Chapter~\ref{CH:TRAP} 讨论了 trampoline 页的作用，但我们在这里看到了页表的一个有趣用例：一个物理页（保存 trampoline 代码）在内核的虚拟地址空间中映射了两次：一次在虚拟地址空间的顶部，一次使用直接映射。
 
 \item 内核栈页。每个进程都有自己的内核栈，映射在较高的内核虚拟地址处，因此在其下方 xv6 可以保留一个未映射的\indextext{保护页}。保护页的 PTE 是无效的（即\lstinline{PTE_V}未设置），因此如果内核溢出内核栈，很可能会引发页故障，导致内核崩溃。如果没有保护页，溢出的栈将覆盖其他内核内存，导致错误操作。崩溃重启是可取的。
 
@@ -403,29 +397,23 @@ Program Header:
 \end{verbatim}
 \end{footnotesize}
 
-We see that the text segment should be loaded at virtual address 0x0
-in memory (without write permissions) from content at offset
-0x1000 in the file. We also see that the data should be loaded at
-address 0x1000, which is at a page boundary, and without executable
-permissions.
+我们看到文本段应该加载到内存中的虚拟地址 0x0（无写权限），从文件中偏移量 0x1000 处的内容加载。我们还看到数据应该加载到地址 0x1000，该地址位于页边界，并且没有可执行权限。
 
-A program section header's
+程序段头的
 \lstinline{filesz}
-may be less than the
-\lstinline{memsz},
-indicating that the gap between them should be filled
-with zeroes (for C global variables) rather than read from the file.
-For
-\lstinline{/init}, the data
+可能小于
+\lstinline{memsz}，
+表示它们之间的间隙应该用零填充（对于 C 全局变量）而不是从文件中读取。
+对于
+\lstinline{/init}，数据
 \lstinline{filesz}
-is 0x10 bytes and
+为 0x10 字节，
 \lstinline{memsz}
-is 0x30 bytes,
-and thus
+为 0x30 字节，
+因此
 \indexcode{uvmalloc}
-allocates enough physical memory to hold 0x30 bytes, but reads only 0x10 bytes
-from the file
-\lstinline{/init}.
+分配足够的物理内存以容纳 0x30 字节，但仅从文件读取 0x10 字节
+\lstinline{/init}。
 
 现在
 \indexcode{kexec}

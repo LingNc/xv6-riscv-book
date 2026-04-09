@@ -4,6 +4,12 @@
 \setCJKmainfont{Noto Serif CJK SC}[BoldFont=Noto Sans CJK SC Bold,ItalicFont=Noto Serif CJK SC]
 \setCJKsansfont{Noto Sans CJK SC}[BoldFont=Noto Sans CJK SC Bold]
 \setCJKmonofont{Noto Sans Mono CJK SC}
+
+% 目录格式调整 - 修复编号宽度问题
+\usepackage{tocloft}
+\setlength{\cftsecnumwidth}{3em}  % section 编号宽度
+\setlength{\cftsubsecnumwidth}{4em}  % subsection 编号宽度
+\setlength{\cftchapnumwidth}{2em}  % chapter 编号宽度
 \usepackage{listings}
 \usepackage{graphicx}
 \usepackage{xcolor}
@@ -20,9 +26,9 @@
 \usetikzlibrary{arrows,positioning,calc}
 
 \usepackage{fontspec}
-\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{DejaVu Serif}}
-\IfFontExistsTF{Arial}{\setsansfont{Arial}}{\setsansfont{DejaVu Sans}}
-\IfFontExistsTF{Courier New}{\setmonofont{Courier New}}{\setmonofont{DejaVu Sans Mono}}
+\setmainfont{DejaVu Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
 
 \usepackage{hyperref}  % should be last
 \hypersetup{unicode=true,
