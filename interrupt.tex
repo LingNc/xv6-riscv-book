@@ -4,9 +4,9 @@
 \indextext{驱动程序（driver）}
 是操作系统中管理特定设备的代码：
 它配置设备硬件，
-告诉设备执行操作，
+指示设备执行操作，
 处理产生的中断，
-并与使用该设备的进程进行交互。
+并与使用该设备的进程交互。
 驱动程序代码可能比较棘手，
 因为驱动程序与设备并发执行，
 而且通常与使用该设备的进程并发执行。
@@ -77,10 +77,10 @@ UART 发送和接收硬件在很大程度上是
 Xv6 的 {\tt main} 调用 {\tt consoleinit}
 \lineref{kernel/console.c:/^consoleinit/} 来初始化 UART
 硬件。这段代码配置 UART 在接收到
-每个输入字节时生成
+每个输入字节时产生
 接收中断，
-并在 UART 完成发送每个输出字节时生成
-\indextext{传输完成（transmit complete）}
+并在 UART 完成发送每个输出字节时产生
+\indextext{发送完成（transmit complete）}
 中断 \lineref{kernel/uart.c:/^uartinit/}。
 
 xv6 shell 通过 {\tt init.c} 打开的文件描述符
@@ -89,7 +89,7 @@ xv6 shell 通过 {\tt init.c} 打开的文件描述符
   consoleread} \lineref{kernel/console.c:/^consoleread/}。{\tt
   consoleread} 等待输入到达（通过中断）并
 缓冲在 {\tt cons.buf} 中，将输入复制到用户空间，
-并（在一整行到达后）返回用户进程。如果用户
+并（在一整行到达后）返回到用户进程。如果用户
 还没有输入完整的一行，任何读取进程都会在
 {\tt sleep} 调用中等待
 \lineref{kernel/console.c:/sleep..cons/}
@@ -154,7 +154,7 @@ xv6 的陷入处理程序。
 而不必等待设备。这种解耦可以通过允许进程
 与设备 I/O 并发执行来提高性能，
 并且在设备较慢（如 UART）或需要立即关注（如回显
-键入的字符）时尤为重要。这个想法有时被称为 \indextext{I/O
+键入的字符）时尤为重要。这个想法有时称为 \indextext{I/O
   并发（I/O concurrency）}。
 
 \section{驱动程序中的并发}
@@ -189,7 +189,7 @@ Xv6 使用定时器中断来维持其对
 
 {\tt start.c} 中的代码
 \lineref{kernel/start.c:/^timerinit/} 设置一些控制位
-允许监管者模式访问定时器控制
+允许监督模式访问定时器控制
 寄存器，然后请求第一个定时器中断。
 {\tt time} 控制寄存器包含一个
 硬件以稳定速率递增的计数值；这作为
@@ -198,17 +198,17 @@ Xv6 使用定时器中断来维持其对
 中断的时间；将 {\tt stimecmp} 设置为 {\tt time} 的当前值
 加上 {\it x} 将安排一个 {\it x} 时间单位后的中断。
 对于 {\tt qemu} 的 RISC-V
-仿真，1000000 个时间单位大约是十分之一秒。
+仿真，1000000 个时间单位约等于十分之一秒。
 
 定时器中断通过 {\tt usertrap} 或 {\tt kerneltrap}
 和 {\tt devintr} 到达，就像其他设备中断一样。
 定时器中断到达时 {\tt scause} 的低位设置为
-五；{\tt trap.c} 中的 {\tt devintr} 检测这种情况
+5；{\tt trap.c} 中的 {\tt devintr} 检测这种情况
 并调用 {\tt clockintr}
 \lineref{kernel/trap.c:/clockintr/}。
-后者函数递增 {\tt ticks}，
+后者递增 {\tt ticks}，
 允许内核跟踪
-时间的流逝。递增只发生在一个 CPU 上，以避免如果有多个 CPU 时时间过得更快。
+时间的流逝。递增只发生在一个 CPU 上，以避免多个 CPU 时时间过得更快。
 {\tt clockintr} 唤醒在 {\tt pause}
 系统调用中等待的任何进程，
 并通过写入

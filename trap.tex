@@ -1,19 +1,19 @@
 \chapter{陷入和系统调用}
 \label{CH:TRAP}
 
-有三种事件会导致 CPU 放弃指令的普通执行，并强制将控制权转移到处理该事件的特殊内核代码。一种情况是系统调用，当用户程序执行 {\tt ecall} 指令请求内核为它做某事时。另一种情况是 \indextext{exception}（异常）：指令（用户或内核）做了非法的事情，例如从无效的虚拟地址加载。第三种情况是设备 \indextext{interrupt}（中断），当设备发出需要关注的信号时，例如磁盘硬件完成读取或写入请求时。
+有三种事件会导致 CPU 暂停指令的正常执行，并强制将控制权转移到处理该事件的特殊内核代码。一种情况是系统调用，当用户程序执行 {\tt ecall} 指令请求内核为它做某事时。另一种情况是 \indextext{exception}（异常）：指令（用户或内核）做了非法的事情，例如从无效的虚拟地址加载。第三种情况是设备 \indextext{interrupt}（中断），当设备发出需要关注的信号时，例如磁盘硬件完成读取或写入请求时。
 
-本书使用 \indextext{trap}（陷入）作为这些情况的通用术语。通常，在陷入时执行的任何代码稍后都需要恢复，并且不需要意识到发生了什么特殊的事情。也就是说，我们经常希望陷入是透明的；这对于设备中断尤其重要，被中断的代码通常不期望中断。陷入强制将控制权转移到内核；内核保存寄存器和其他状态以便可以恢复执行；内核执行适当的处理程序代码（例如，系统调用实现或设备驱动）；内核恢复保存的状态并从陷入返回；原始代码从停止的地方继续执行。
+本书使用 \indextext{trap}（陷入）作为这些情况的统称。通常，在陷入时执行的任何代码稍后都需要恢复，且不应意识到发生了什么特殊的事情。也就是说，我们希望陷入是透明的；这对于设备中断尤其重要，因为被中断的代码通常不期望中断的发生。陷入的处理流程如下：强制将控制权转移到内核；内核保存寄存器和其他状态以便恢复执行；内核执行适当的处理程序代码（例如，系统调用实现或设备驱动）；内核恢复保存的状态并从陷入返回；原始代码从停止的地方继续执行。
 
-Xv6 在内核中处理所有陷入；陷入不会传递给用户代码。在内核中处理陷入对系统调用来说是自然的。对于中断来说这是有意义的，因为隔离要求只有内核才能使用设备，而且因为内核能够在多个进程之间共享设备。对于异常来说这也是有意义的，因为内核可能能够处理来自用户空间的异常（例如参见 Chapter~\ref{CH:PGFAULTS}）或通过杀死违规程序来响应。
+Xv6 在内核中处理所有陷入；陷入不会传递给用户代码。在内核中处理系统调用是顺理成章的。对于中断而言，这也是合理的，因为隔离机制要求只有内核才能使用设备，而且内核能够在多个进程之间共享设备。对于异常而言这同样合理，因为内核可能能够处理来自用户空间的异常（例如参见 Chapter~\ref{CH:PGFAULTS}）或通过终止违规程序来响应。
 
-Xv6 陷入处理分为四个阶段：RISC-V CPU 采取的硬件操作、为内核 C 代码铺平道路的一些汇编指令、决定如何处理陷入的 C 函数，以及系统调用或设备驱动服务例程。虽然三种陷入类型之间的共性表明内核可以用单一代码路径处理所有陷入，但事实证明为两种不同情况设置单独的代码是方便的：来自用户空间的陷入和来自内核空间的陷入。处理陷入的内核代码（汇编或 C）通常称为 \indextext{handler}（处理程序）；第一条处理程序指令通常用汇编（而不是 C）编写，有时称为 \indextext{vector}（向量）。
+Xv6 陷入处理分为四个阶段：RISC-V CPU 采取的硬件操作、为内核 C 代码铺平道路的一些汇编指令、决定如何处理陷入的 C 函数，以及系统调用或设备驱动服务例程。虽然三种陷入类型之间的共性表明内核可以用单一代码路径处理所有陷入，但事实证明为两种不同情况设置单独的代码是方便的：来自用户空间的陷入和来自内核空间的陷入。处理陷入的内核代码（汇编或 C）通常称为 \indextext{handler}（处理程序）；处理程序的第一条指令通常用汇编（而非 C）编写，有时称为 \indextext{vector}（向量入口）。
 
 在继续之前，请阅读 {\tt kernel/trampoline.S} 以及 {\tt kernel/trap.c} 中的 {\tt usertrap()} 和 {\tt prepare\_return()}。
 
 \section{RISC-V 陷入机制}
 
-每个 RISC-V CPU 都有一组硬件控制寄存器，内核写入这些寄存器以告诉 CPU 如何处理陷入，并且内核可以读取这些寄存器以了解已发生的陷入。RISC-V 文档包含完整的故事~\cite{riscv:priv}。{\tt riscv.h}
+每个 RISC-V CPU 都有一组硬件控制寄存器，内核写入这些寄存器以告诉 CPU 如何处理陷入，并且内核可以读取这些寄存器以了解已发生的陷入。RISC-V 文档中有完整说明~\cite{riscv:priv}。{\tt riscv.h}
 \fileref{kernel/riscv.h}
 包含 xv6 使用的定义。以下是最重要的寄存器的概述：
 
@@ -27,7 +27,7 @@ Xv6 陷入处理分为四个阶段：RISC-V CPU 采取的硬件操作、为内�
 
 \item \indexcode{sscratch}：内核陷入处理程序代码使用 {\tt sscratch} 来帮助它在保存用户寄存器之前避免覆盖它们。
 
-\item \indexcode{sstatus}：{\tt sstatus} 中的 SIE 位控制是否启用设备中断。如果内核清除 SIE，RISC-V 将推迟设备中断，直到内核设置 SIE。SPP 位指示陷入来自用户模式还是监管者模式，并控制 {\tt sret} 返回到哪种模式。
+\item \indexcode{sstatus}：{\tt sstatus} 中的 SIE（Supervisor Interrupt Enable，监督模式中断使能）位控制是否启用设备中断。如果内核清除 SIE，RISC-V 将推迟设备中断，直到内核重新设置 SIE。SPP（Supervisor Previous Privilege，监督模式先前特权）位指示陷入来自用户模式还是监督模式，并控制 {\tt sret} 返回到哪种模式。
 
 \end{itemize}
 
@@ -57,7 +57,7 @@ Xv6 陷入处理分为四个阶段：RISC-V CPU 采取的硬件操作、为内�
 
 \end{enumerate}
 
-CPU 不会切换到内核页表，不会切换到内核中的栈，也不会保存除 {\tt pc} 之外的任何寄存器。内核软件必须执行这些任务。CPU 在陷入期间做最少工作的原因之一是为软件提供灵活性；例如，一些操作系统在某些情况下省略页表切换以提高陷入性能。
+CPU 不会切换到内核页表，不会切换到内核栈，也不会保存除 {\tt pc} 之外的任何寄存器。这些任务必须由内核软件完成。CPU 在陷入期间只做最少工作的原因之一是为软件提供灵活性；例如，某些操作系统在某些情况下会省略页表切换以提高陷入处理的性能。
 
 值得思考的是，上面列出的任何步骤是否可以省略，也许是为了更快的陷入。虽然在某些情况下更简单的序列可以工作，但许多步骤在一般情况下省略是危险的。例如，假设 CPU 没有切换程序计数器。那么来自用户空间的陷入可能会在仍处于用户指令时切换到监管者模式。这些用户指令可能会破坏用户/内核隔离，例如通过修改 {\tt satp} 寄存器以指向允许访问所有物理内存的页表。因此，CPU 切换到内核指定的指令地址，即 {\tt stvec}，这一点很重要。
 
@@ -69,9 +69,9 @@ CPU 不会切换到内核页表，不会切换到内核中的栈，也不会保�
 \label{fig:usertrap}
 \end{figure}
 
-Xv6 根据陷入发生在内核执行还是用户代码执行中而有所不同地处理陷入。以下是用户代码陷入的故事；Section~\ref{s:ktraps} 描述了内核代码的陷入。
+Xv6 根据陷入发生在内核执行还是用户代码执行中而有所不同地处理陷入。以下是用户代码陷入的处理流程；Section~\ref{s:ktraps} 将介绍内核代码的陷入处理。
 
-如果用户程序进行系统调用（{\tt ecall} 指令），或做了非法的事情，或设备中断，则可能在用户空间执行时发生陷入。如 Figure~\ref{fig:usertrap} 所示，来自用户空间的高级别陷入路径是
+如果用户程序进行系统调用（{\tt ecall} 指令），或执行了非法操作，或发生设备中断，则可能在用户空间执行时发生陷入。如 Figure~\ref{fig:usertrap} 所示，来自用户空间的高级别陷入路径是
 {\tt uservec}
 \lineref{kernel/trampoline.S:/^uservec/}，
 然后是 {\tt usertrap}
@@ -90,9 +90,9 @@ xv6 陷入处理设计的一个主要限制是 RISC-V 硬件在强制陷入时�
 
 Xv6 使用 \indextext{trampoline}（跳板）页来满足这些要求。此页包含 {\tt uservec}，即 {\tt stvec} 指向的 xv6 陷入处理代码。trampoline 页在每个进程的页表中映射到虚拟地址 {\tt 0x3ffffff000}（称为 \indexcode{TRAMPOLINE}），这是虚拟地址空间中的最后一页，以便它位于程序自己使用的内存之上。trampoline 页在内核页表中映射到相同的虚拟地址。参见 Figure~\ref{fig:as} 和 Figure~\ref{fig:xv6_layout}。因为 trampoline 页映射在用户页表中，所以陷入可以在监管者模式下开始在那里执行。因为 trampoline 页在内核地址空间中映射到相同的地址，所以陷入处理程序可以在切换到内核页表后继续执行。
 
-{\tt uservec} 陷阱处理程序的代码在 {\tt trampoline.S}
+{\tt uservec} 陷阱处理程序的代码位于 {\tt trampoline.S}
 \lineref{kernel/trampoline.S:/^uservec/}。
-当 {\tt uservec} 开始时，所有 32 个寄存器都包含被中断用户代码拥有的值。这 32 个值需要保存在内存中的某个地方，以便以后内核可以在返回用户空间之前恢复它们。存储到内存需要使用寄存器来保存存储的目标地址，但此时没有通用寄存器可用！幸运的是，RISC-V 以 {\tt sscratch} 寄存器的形式提供了帮助。{\tt uservec} 开头的 {\tt csrw} 指令将 {\tt a0} 保存在 {\tt sscratch} 中。现在 {\tt uservec} 有一个寄存器（{\tt a0}）可以使用。
+当 {\tt uservec} 开始时，所有 32 个寄存器都包含被中断用户代码的值。这 32 个值需要保存在内存中的某个位置，以便内核在稍后返回用户空间之前恢复它们。存储到内存需要使用寄存器来保存目标地址，但此时没有通用寄存器可用！幸运的是，RISC-V 以 {\tt sscratch} 寄存器的形式提供了帮助。{\tt uservec} 开头的 {\tt csrw} 指令将 {\tt a0} 保存在 {\tt sscratch} 中。现在 {\tt uservec} 有一个寄存器（{\tt a0}）可以使用了。
 
 {\tt uservec} 的下一个任务是保存 32 个用户寄存器。内核为每个进程分配一页内存作为 {\tt trapframe} 结构，该结构（除其他外）有空间保存 32 个用户寄存器
 \lineref{kernel/proc.h:/^struct.trapframe/}。因为 {\tt satp} 仍然引用用户页表，所以 {\tt uservec} 需要 trapframe 映射在用户地址空间中。Xv6 将每个进程的 trapframe 映射到该进程用户页表中的虚拟地址 {\tt TRAPFRAME}（{\tt 0x3fffffe000}）；在 {\tt TRAMPOLINE} 下方一页。每个进程的 {\tt p->trapframe}
@@ -102,21 +102,21 @@ Xv6 使用 \indextext{trampoline}（跳板）页来满足这些要求。此页�
 
 内核先前初始化 trapframe 以包含对 {\tt uservec} 有用的一些值：当前进程的内核栈地址、当前 CPU 的 hartid、{\tt usertrap} 函数的地址以及内核页表的地址。{\tt uservec} 检索这些值，将 {\tt satp} 切换到内核页表，并跳转到 {\tt usertrap}，一个 C 函数。
 
-{\tt usertrap} 的工作是确定陷入的原因，处理它，并返回
+{\tt usertrap} 的工作是确定陷入的原因，进行处理，然后返回
 \lineref{kernel/trap.c:/^usertrap/}。
-它首先更改 {\tt stvec}，以便内核中的陷入将由 {\tt kernelvec} 而不是 {\tt uservec} 处理。它保存 {\tt sepc} 寄存器（保存的用户程序计数器）以供将来返回用户空间时使用。如果陷入是系统调用，{\tt usertrap} 调用 {\tt syscall} 来处理它；如果是设备中断，{\tt devintr}；如果是页错误，{\tt vmfault}；否则它是异常（例如，使用无效地址），内核杀死故障进程。系统调用路径将保存的用户程序计数器加四，因为在系统调用的情况下，RISC-V 使程序指针指向 {\tt ecall} 指令，但用户代码需要从后续指令恢复执行。{\tt usertrap} 检查进程是否已被杀死或应该让出 CPU（如果此陷入是定时器中断）。
+它首先将 {\tt stvec} 指向 {\tt kernelvec}，以便内核中的陷入将由 {\tt kernelvec} 而非 {\tt uservec} 处理。它保存 {\tt sepc} 寄存器（保存的用户程序计数器），以便将来返回用户空间时使用。如果陷入是系统调用，{\tt usertrap} 调用 {\tt syscall} 处理；如果是设备中断，调用 {\tt devintr}；如果是页错误，调用 {\tt vmfault}；否则就是异常（例如，使用了无效地址），内核会终止故障进程。系统调用路径将保存的用户程序计数器加 4，因为在系统调用的情况下，RISC-V 使程序指针指向 {\tt ecall} 指令，但用户代码需要从后续指令恢复执行。{\tt usertrap} 检查进程是否已被终止或应该让出 CPU（如果此陷入是定时器中断）。
 
 返回用户空间的第一步是调用 {\tt prepare\_return}
 {\lineref{kernel/trap.c:/^prepare/}}。
-此函数设置 RISC-V 控制寄存器以准备将来从用户空间陷入：设置 {\tt stvec}
-为 {\tt uservec} 并准备 {\tt uservec} 依赖的 trapframe 字段。{\tt prepare\_return} 将 {\tt sepc} 设置为先前保存的用户程序计数器。最后，{\tt usertrap}
+此函数设置 RISC-V 控制寄存器，为将来从用户空间陷入做准备：将 {\tt stvec}
+设置为 {\tt uservec}，并准备 {\tt uservec} 依赖的 trapframe 字段。{\tt prepare\_return} 将 {\tt sepc} 设置为先前保存的用户程序计数器。最后，{\tt usertrap}
 返回到 trampoline 页中的 {\tt userret}
 \lineref{kernel/trampoline.S:/^userret/}，
-在 {\tt a0} 中传递回指向用户页表的指针。
+在 {\tt a0} 中传递指向用户页表的指针。
 
-{\tt userret} 将 {\tt satp} 切换到进程的用户页表。回想一下，用户页表映射了 trampoline 页和 {\tt TRAPFRAME}，但不映射内核的其他任何内容。trampoline 页在用户和内核页表中相同虚拟地址的映射允许 {\tt userret} 在更改 {\tt satp} 后继续执行。从这一点开始，{\tt userret} 可以使用的唯一数据是寄存器内容和 trapframe 内容。{\tt userret} 将 {\tt TRAPFRAME} 地址加载到 {\tt a0} 中，通过 {\tt a0} 从 trapframe 恢复保存的用户寄存器，恢复保存的用户 {\tt a0}，并执行 {\tt sret} 返回到用户空间。
+{\tt userret} 将 {\tt satp} 切换到进程的用户页表。回想一下，用户页表映射了 trampoline 页和 {\tt TRAPFRAME}，但不映射内核的其他内容。trampoline 页在用户和内核页表中映射到相同的虚拟地址，这使得 {\tt userret} 在更改 {\tt satp} 后可以继续执行。从此刻起，{\tt userret} 唯一能使用的数据是寄存器内容和 trapframe 内容。{\tt userret} 将 {\tt TRAPFRAME} 地址加载到 {\tt a0} 中，通过 {\tt a0} 从 trapframe 恢复保存的用户寄存器，恢复保存的用户 {\tt a0}，然后执行 {\tt sret} 返回用户空间。
 
-{\tt uservec} 和 {\tt userret} 用汇编语言编写，因为很难编写 C 代码来保存或恢复所有寄存器或在切换页表后生存。
+{\tt uservec} 和 {\tt userret} 用汇编语言编写，因为很难编写能够保存或恢复所有寄存器，或在切换页表后继续执行的 C 代码。
 
 \section{代码：调用系统调用}
 
@@ -156,7 +156,7 @@ C 编译器为函数调用生成的代码将三个参数加载到寄存器 {\tt 
 导致调用系统调用实现函数
 \lstinline{sys_write}。
 
-当 \lstinline{sys_write} 返回时，\lstinline{syscall} 将其返回值记录在 \lstinline{p->trapframe->a0} 中。这将导致原始用户空间对 {\tt write()} 的调用返回该值，因为 RISC-V 上的 C 调用约定将返回值放在 {\tt a0} 中。系统调用通常返回负数以指示错误，返回零或正数以指示成功。
+当 \lstinline{sys_write} 返回时，\lstinline{syscall} 将其返回值记录在 \lstinline{p->trapframe->a0} 中。这将导致原始用户空间对 {\tt write()} 的调用返回该值，因为 RISC-V 上的 C 调用约定将返回值放在 {\tt a0} 中。系统调用通常返回负数以指示错误，返回零或正数表示成功。
 
 \section{代码：系统调用参数}
 
@@ -169,7 +169,7 @@ C 编译器为函数调用生成的代码将三个参数加载到寄存器 {\tt 
 \textit{n}
 个系统调用参数作为整数、指针或文件描述符。
 
-一些系统调用将指针作为参数传递，内核必须使用这些指针来读取或写入用户内存。例如，{\tt write} 系统调用向内核传递一个用户空间指针，指向要写入的数据。此类指针带来两个挑战。首先，用户程序可能有错误或恶意，可能向内核传递无效指针或旨在欺骗内核访问内核内存而不是用户内存的指针。其次，xv6 内核页表映射与用户页表映射不同，因此内核不能使用普通指令从用户提供的地址加载或存储。
+一些系统调用将指针作为参数传递，内核必须使用这些指针来读取或写入用户内存。例如，{\tt write} 系统调用向内核传递一个用户空间指针，指向要写入的数据。此类指针带来两个挑战。首先，用户程序可能存在缺陷或是恶意的，可能向内核传递无效指针，或旨在欺骗内核访问内核内存而非用户内存的指针。其次，xv6 内核页表映射与用户页表映射不同，因此内核不能使用普通指令从用户提供的地址加载或存储。
 
 内核实现函数来安全地在用户提供的地址之间传输数据。{\tt fetchstr} 是一个例子 \lineref{kernel/syscall.c:/^fetchstr/}。
 文件系统调用如
@@ -191,17 +191,17 @@ Xv6 以不同于用户代码陷入的方式处理内核代码的陷入。进入�
 \lineref{kernel/kernelvec.S:/^kernelvec/}。
 因为 {\tt kernelvec} 只有在 xv6 已经在内核中时才会执行，所以 {\tt kernelvec} 可以依赖 {\tt satp} 被设置为内核页表，并且栈指针引用有效的内核栈。{\tt kernelvec} 将所有 32 个寄存器推入当前栈，稍后将从那里恢复它们，以便被中断的内核代码可以在不受干扰的情况下恢复。
 
-{\tt kernelvec} 在被中断的内核线程的栈上保存寄存器，这是有意义的，因为寄存器值属于该线程。如果陷入导致切换到不同的线程，这一点尤其重要——在这种情况下，陷入实际上将从新线程的栈返回，将被中断线程的保存寄存器安全地留在其栈上。
+{\tt kernelvec} 将被中断内核线程的寄存器保存在其栈上，这很合理，因为寄存器值属于该线程。如果陷入导致切换到不同线程，这一点尤其重要——在这种情况下，陷入实际上将从新线程的栈返回，将被中断线程的保存寄存器安全地留在其栈上。
 
 {\tt kernelvec} 在保存寄存器后跳转到 {\tt kerneltrap}
 \lineref{kernel/trap.c:/^kerneltrap/}。
-{\tt kerneltrap} 只准备一种类型的陷入：设备中断。它调用 {\tt devintr}
+{\tt kerneltrap} 只准备处理一种类型的陷入：设备中断。它调用 {\tt devintr}
 \lineref{kernel/trap.c:/^devintr/}
-来处理它们。如果陷入不是设备中断，它必须是异常，例如内核代码尝试使用无效指针。这只能由内核代码中的错误引起。内核没有办法在这种情况下恢复，因此它调用 {\tt panic()}，打印错误消息然后停止。
+来处理它们。如果陷入不是设备中断，它一定是异常，例如内核代码尝试使用无效指针。这只能由内核代码中的错误引起。内核在这种情况下无法恢复，因此它调用 {\tt panic()}，打印错误消息然后停止。
 
 如果由于定时器中断而调用 {\tt kerneltrap}，并且进程的内核线程正在运行（相对于调度程序线程），{\tt kerneltrap} 调用 {\tt yield} 给其他线程运行的机会。在某个时候，其中一个线程会让出，让我们的线程及其 {\tt kerneltrap} 再次恢复。Chapter~\ref{CH:SCHED} 解释了 {\tt yield} 中发生的事情。
 
-当 {\tt kerneltrap} 的工作完成时，它需要返回到被陷入中断的任何代码。因为 {\tt yield} 可能扰乱了 {\tt sepc} 和 {\tt sstatus} 中的先前模式，{\tt kerneltrap} 在开始时保存它们。它现在恢复那些控制寄存器并返回到 {\tt kernelvec}
+当 {\tt kerneltrap} 的工作完成时，它需要返回到被陷入中断的代码。因为 {\tt yield} 可能扰乱了 {\tt sepc} 和 {\tt sstatus} 中的先前模式，{\tt kerneltrap} 在开始时保存它们。它现在恢复那些控制寄存器并返回到 {\tt kernelvec}
 \lineref{kernel/kernelvec.S:/call.kerneltrap$/}。
 {\tt kernelvec} 从栈中弹出保存的寄存器并执行 {\tt sret}，它将 {\tt sepc} 复制到 {\tt pc} 并恢复被中断的内核代码。
 

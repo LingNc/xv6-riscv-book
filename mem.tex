@@ -9,12 +9,12 @@
 \chapter{页表}
 \label{CH:MEM}
 
-页表（page table）是操作系统为每个进程提供其私有地址空间和内存的最流行机制。页表决定内存地址的含义，以及物理内存的哪些部分可以被访问。它们允许 xv6 隔离不同进程的地址空间并将其多路复用到单个物理内存上。页表提供了一层间接性，允许操作系统执行许多有用的技巧。Xv6 执行了一些：在多个地址空间中映射相同的内存（trampoline 页），用未映射的页保护内核和用户栈，以及延迟分配用户堆内存。本章的其余部分解释了 RISC-V 硬件提供的页表以及 xv6 如何使用它们。
+页表（page table）是操作系统为每个进程提供私有地址空间和内存的最流行机制。页表决定内存地址的含义，以及哪些物理内存区域可被访问。它们允许 xv6 隔离不同进程的地址空间，并将其多路复用到单个物理内存上。页表提供了一层间接性，使操作系统能够执行许多有用的技巧。Xv6 实现了一些：在多个地址空间中映射相同的内存（trampoline 页），用未映射的页保护内核和用户栈，以及延迟分配用户堆内存。本章的其余部分将解释 RISC-V 硬件提供的页表以及 xv6 如何使用它们。
 
 %%
 \section{分页硬件}
 %%
-作为提醒，RISC-V 指令（用户和内核）操作虚拟地址（virtual address）。机器的 RAM 或物理内存（physical memory）使用物理地址索引。RISC-V 页表硬件通过将每个虚拟地址映射到物理地址来连接这两种地址。
+提醒一下，RISC-V 指令（用户态和内核态）操作虚拟地址（virtual address）。机器的 RAM（即物理内存，physical memory）使用物理地址索引。RISC-V 页表硬件通过将每个虚拟地址映射到物理地址来连接这两种地址。
 
 \begin{figure}[t]
 \centering
@@ -23,8 +23,7 @@
 \label{fig:riscv_address}
 \end{figure}
 
-Xv6 使用 RISC-V 的 Sv39 模式，这意味着 64 位虚拟地址只有低 39 位被使用；高 25 位不使用。在此 Sv39 配置中，RISC-V 页表逻辑上是 $2^{27}$ (134,217,728) 个
-\indextext{page table entries (PTEs)}（页表项）的数组。每个 PTE 包含一个 44 位的物理页号（PPN）和一些标志。分页硬件使用 39 位中的高 27 位索引到页表中找到 PTE，并生成一个 56 位的物理地址，其高 44 位来自 PTE 中的 PPN，低 12 位从原始虚拟地址复制。
+Xv6 使用 RISC-V 的 Sv39 模式，这意味着 64 位虚拟地址只有低 39 位被使用，高 25 位不使用。在此 Sv39 配置中，RISC-V 页表逻辑上是 $2^{27}$ (134,217,728) 个 \indextext{page table entries (PTEs)}（页表项）的数组。每个 PTE 包含一个 44 位的物理页号（PPN）和一些标志。分页硬件使用 39 位中的高 27 位索引到页表中找到 PTE，并生成一个 56 位的物理地址，其高 44 位来自 PTE 中的 PPN，低 12 位从原始虚拟地址复制。
 Figure~\ref{fig:riscv_address}
 显示了此过程，页表的逻辑视图是 PTE 的简单数组（RISC-V 页表实际上是一棵树；参见 Figure~\ref{fig:riscv_pagetable} 了解完整故事）。页表使操作系统能够以 4096 ($2^{12}$) 字节对齐块的粒度控制虚拟到物理地址转换。这样的块称为 \indextext{page}（页）。
 
@@ -35,7 +34,7 @@ Figure~\ref{fig:riscv_address}
 \label{fig:riscv_pagetable}
 \end{figure}
 
-RISC-V 的设计为虚拟地址和物理地址的扩展留下了空间。如果需要更多的虚拟地址空间，RISC-V 支持 Sv48 模式，具有 48 位虚拟地址~\cite{riscv:priv}。物理地址也有扩展空间：PTE 格式中有空间让物理页号再增长 10 位。RISC-V 的设计者根据技术预测选择了地址大小。$2^{48}$ 字节是 262,144 GB，比今天任何应用程序可能使用的用户虚拟地址空间大得多。$2^{56}$ 字节的物理地址空间是 65,536 TB，比目前任何计算机可以配备的 RAM 都多得多。
+RISC-V 的设计为虚拟地址和物理地址的扩展留下了空间。如果需要更多虚拟地址空间，RISC-V 支持 Sv48 模式，具有 48 位虚拟地址~\cite{riscv:priv}。物理地址也有扩展空间：PTE 格式中有空间让物理页号再增长 10 位。RISC-V 的设计者根据技术预测选择了地址大小。$2^{48}$ 字节即 262,144 GB，远大于当今任何应用程序可能使用的用户虚拟地址空间。$2^{56}$ 字节即 65,536 TB 的物理地址空间，远超目前任何计算机可配备的 RAM。
 
 如
 Figure~\ref{fig:riscv_pagetable}
@@ -43,22 +42,22 @@ Figure~\ref{fig:riscv_pagetable}
 
 如果转换地址所需的三个 PTE 中任何一个不存在，分页硬件会引发 \indextext{page-fault exception}（页错误异常），由内核处理页错误（参见 Chapters~\ref{CH:TRAP} 和~\ref{CH:PGFAULTS}）。
 
-与 Figure~\ref{fig:riscv_address} 的单级设计相比，Figure~\ref{fig:riscv_pagetable} 的三级结构允许以更节省内存的方式记录 PTE。在虚拟地址大范围没有映射的常见情况下，三级结构可以省略整个页目录。例如，如果应用程序只使用从地址零开始的少数几页，那么顶级页目录的条目 1 到 511 是无效的，内核不需要为这 511 个中间页目录分配页面。此外，内核也不需要为这 511 个中间页目录的底层页目录分配页面。因此，在这个例子中，三级设计节省了 511 个中间页目录页面和 $511\times512$ 个底层页目录页面。
+与 Figure~\ref{fig:riscv_address} 的单级设计相比，Figure~\ref{fig:riscv_pagetable} 的三级结构以更节省内存的方式记录 PTE。在虚拟地址大范围无映射的常见情况下，三级结构可以省略整个页目录。例如，如果应用程序只使用从地址零开始的少数几页，那么顶级页目录的条目 1 到 511 无效，内核无需为这 511 个中间页目录分配页面。此外，内核也无需为这 511 个中间页目录的底层页目录分配页面。因此，在此例中，三级设计节省了 511 个中间页目录页面和 $511\times512$ 个底层页目录页面。
 
 尽管 CPU 在执行加载或存储指令时会以硬件方式遍历三级结构，但三级的一个潜在缺点是 CPU 必须从内存加载三个 PTE 才能将加载/存储指令中的虚拟地址转换为物理地址。为了避免从物理内存加载 PTE 的开销，RISC-V CPU 将页表项缓存在
 \indextext{Translation Look-aside Buffer (TLB)}（转换后备缓冲器）中。
 
-每个 PTE 包含标志位，告诉分页硬件如何使用关联的虚拟地址。
+每个 PTE 包含标志位，告知分页硬件如何使用关联的虚拟地址。
 \indexcode{PTE_V}
-指示 PTE 是否存在：如果未设置，对页面的引用会导致页错误（即不允许）。
+指示 PTE 是否存在：若未设置，对页面的引用会导致页错误（即不允许）。
 \indexcode{PTE_R}
 控制是否允许指令读取页面。
 \indexcode{PTE_W}
 控制是否允许指令写入页面。
 \indexcode{PTE_X}
-控制 CPU 是否可以将页面内容解释为指令并执行它们。
+控制 CPU 是否可将页面内容解释为指令并执行。
 \indexcode{PTE_U}
-控制用户模式中的指令是否允许访问页面；如果
+控制用户模式中的指令是否允许访问页面；若
 \indexcode{PTE_U}
 未设置，PTE 只能在监管者模式中使用。
 Figure~\ref{fig:riscv_pagetable}
@@ -72,7 +71,7 @@ Figure~\ref{fig:riscv_pagetable}
 
 从内核的角度看，页表是存储在内存中的数据，内核使用类似于树形数据结构的代码创建和修改页表。
 
-关于本书中使用的一些术语的说明。\textit{物理内存}（Physical memory）指 RAM 中的存储单元。物理内存的字节有一个地址，称为 \textit{物理地址}（physical address）。解引用地址的指令（如加载、存储、跳转和函数调用）只使用虚拟地址（virtual address），分页硬件将其转换为物理地址，然后发送到 RAM 硬件读取或写入存储。\textit{地址空间}（address space）是给定页表中有效的虚拟地址集合；每个 xv6 进程有独立的用户地址空间，xv6 内核也有自己的地址空间。\textit{用户内存}（User memory）指进程的用户地址空间加上页表允许进程访问的物理内存。\textit{虚拟内存}（Virtual memory）指与页表管理和使用它们实现隔离等目标相关的想法和技术。
+关于本书中使用的一些术语的说明。\textit{物理内存}（Physical memory）指 RAM 中的存储单元。物理内存的字节有一个地址，称为 \textit{物理地址}（physical address）。解引用地址的指令（如加载、存储、跳转和函数调用）只使用虚拟地址（virtual address），分页硬件将其转换为物理地址，然后发送到 RAM 硬件读取或写入存储。\textit{地址空间}（address space）是给定页表中有效的虚拟地址集合；每个 xv6 进程有独立的用户地址空间，xv6 内核也有自己的地址空间。\textit{用户内存}（User memory）指进程的用户地址空间加上页表允许进程访问的物理内存。\textit{虚拟内存}（Virtual memory）指与页表管理及使用它们实现隔离等相关的概念和技术。
 
 \begin{figure}[h]
 \centering
@@ -93,9 +92,7 @@ Figure~\ref{fig:xv6_layout}
 \fileref{kernel/memlayout.h}
 声明了 xv6 内核内存布局的常量。
 
-QEMU 模拟一台计算机，包括从物理地址 \texttt{0x80000000} 开始并至少持续到 \texttt{0x88000000} 的 RAM（物理内存），xv6 称之为 \texttt{PHYSTOP}。QEMU 模拟还包括 I/O 设备，如磁盘接口。QEMU 将设备接口作为位于物理地址空间 \texttt{0x80000000} 以下的
-\indextext{memory-mapped}（内存映射）
-控制寄存器暴露给软件。内核可以通过读取/写入这些特殊物理地址与设备交互；此类读取和写入与设备硬件通信而不是与 RAM 通信。Chapter~\ref{CH:TRAP} 解释 xv6 如何与设备交互。
+QEMU 模拟一台计算机，包括从物理地址 \texttt{0x80000000} 开始并至少持续到 \texttt{0x88000000} 的 RAM（物理内存），xv6 称之为 \texttt{PHYSTOP}。QEMU 模拟还包括 I/O 设备，如磁盘接口。QEMU 将设备接口作为位于物理地址空间 \texttt{0x80000000} 以下的 \indextext{memory-mapped}（内存映射）控制寄存器暴露给软件。内核可以通过读写这些特殊物理地址与设备交互；此类读写与设备硬件通信而非 RAM。Chapter~\ref{CH:TRAP} 解释 xv6 如何与设备交互。
 
 内核将所有物理 RAM 和设备寄存器映射到等于物理地址的虚拟地址。这称为``直接映射''，允许内核通过简单地加载或存储虚拟地址 $x$ 来读取或写入物理地址 $x$。内核代码本身位于虚拟地址空间和物理内存中的 \lstinline{KERNBASE=0x80000000}。当 \lstinline{kfork}
 \lineref{kernel/proc.c:/^kfork/}
@@ -111,19 +108,9 @@ QEMU 模拟一台计算机，包括从物理地址 \texttt{0x80000000} 开始并
 
 \end{itemize}
 
-虽然内核通过高内存映射使用其栈，但每个栈也可以通过直接映射地址访问内核。另一种设计可能只有直接映射，并在直接映射地址使用栈。然而，在这种安排中，提供保护页将涉及取消映射否则会引用物理内存的虚拟地址，这将很难使用。
+虽然内核通过高内存映射使用其栈，但每个栈也可通过直接映射地址供内核访问。另一种设计可能只有直接映射，并在直接映射地址使用栈。然而，在这种安排中，提供保护页将涉及取消映射否则会引用物理内存的虚拟地址，这将很难使用。
 
-内核将 trampoline 和内核文本页映射为具有
-\lstinline{PTE_R}
-和
-\lstinline{PTE_X}
-权限，但没有 \lstinline{PTE_W}。
-内核将其他页映射为具有
-\lstinline{PTE_R}
-和
-\lstinline{PTE_W}
-权限，但没有 \lstinline{PTE_X}。
-保护页映射是无效的。这些受限权限的目的是帮助捕获以意外方式访问页的内核错误，例如如果内核代码意外尝试写入内核指令。
+内核将 trampoline 和内核文本页映射为具有 \lstinline{PTE_R} 和 \lstinline{PTE_X} 权限，但没有 \lstinline{PTE_W}。内核将其他页映射为具有 \lstinline{PTE_R} 和 \lstinline{PTE_W} 权限，但没有 \lstinline{PTE_X}。保护页映射是无效的。这些受限权限旨在帮助捕获以意外方式访问页的内核错误，例如若内核代码意外尝试写入内核指令。
 
 内核创建一个单一的内核页表，所有 CPU 在内核中执行时使用它。xv6 在最初创建后不会修改内核页表。
 
@@ -218,9 +205,7 @@ Figure~\ref{fig:riscv_pagetable}）。
 
 内核必须在运行时分配和释放物理内存，用于页表、用户内存、内核栈和管道缓冲区。
 
-Xv6 使用内核末尾和
-\indexcode{PHYSTOP}
-之间的物理内存进行运行时分配。它每次分配和释放整个 4096 字节的页。它通过在页面本身中线程化一个链表来跟踪哪些页面是空闲的。分配包括从链表中删除一页；释放包括将释放的页面添加到列表中。
+Xv6 使用内核末尾和 \indexcode{PHYSTOP} 之间的物理内存进行运行时分配。它每次分配和释放整个 4096 字节的页。它通过在页面本身中内嵌链表来跟踪哪些页面是空闲的。分配即把一页从链表中删除；释放即将页面添加到链表中。
 
 请阅读 {\tt kernel/kalloc.c}。
 
@@ -228,20 +213,7 @@ Xv6 使用内核末尾和
 \section{代码：物理内存分配器}
 %%
 
-分配器位于 {\tt kalloc.c} \fileref{kernel/kalloc.c}。分配器的数据结构是一个
-\textit{空闲列表}（free list），
-包含可用于分配的物理内存页。每个空闲页的``下一个''指针位于
-\indexcode{struct run}
-\lineref{kernel/kalloc.c:/^struct.run/}。
-分配器将每个空闲页的
-\lstinline{run}
-结构存储在空闲页本身中，因为在页面空闲时没有存储其他内容。空闲列表受到自旋锁的保护
-\linerefs{kernel/kalloc.c:/^struct.{/,/}/}。
-列表和锁包装在一个结构体中，以明确锁保护结构体中的字段。现在，忽略锁和对
-\lstinline{acquire}
-和
-\lstinline{release}
-的调用；Chapter~\ref{CH:LOCK} 将详细讨论锁定。
+分配器位于 {\tt kalloc.c} \fileref{kernel/kalloc.c}。其数据结构是一个 \textit{空闲列表}（free list），包含可用于分配的物理内存页。每个空闲页存储其``下一个''指针的位置在 \indexcode{struct run} \lineref{kernel/kalloc.c:/^struct.run/}。分配器将每个空闲页的 \lstinline{run} 结构存储在空闲页本身中，因为页面空闲时无其他内容存储。空闲列表受自旋锁保护 \linerefs{kernel/kalloc.c:/^struct.{/,/}/}。列表和锁包装在一个结构体中，以明确锁保护结构体中的字段。现在，忽略锁和对 \lstinline{acquire} 与 \lstinline{release} 的调用；Chapter~\ref{CH:LOCK} 将详细讨论锁定。
 
 函数
 \indexcode{main}
