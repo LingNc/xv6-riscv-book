@@ -501,7 +501,7 @@ Xv6 记录子进程死亡直到 {\tt wait} 观察到它的方式是 {\tt exit} �
 一些 xv6
 \lstinline{sleep}
 循环不检查
-\lstinline{p->killed}
+\lstinline{p->killed}，
 因为代码处于多步系统调用的中间，应该是原子的（即，如果中途放弃会不正确）。
 Virtio 驱动程序
 \lineref{kernel/virtio\_disk.c:/sleep.b/}

@@ -473,8 +473,8 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 | lock.tex | ~933 | ~683 | 🟢 通过 | 0 | 审计完成 |
 | sched.tex | ~433 | ~370 | 🟢 通过 | 0 | 审计完成 |
 | sleep.tex | ~843 | ~728 | 🟢 通过 | 0 | 审计完成 |
-| fs.tex | ~1819 | ~1486 | 🟤 审计中 | - | 翻译完成，待审计 |
-| lock2.tex | ~231 | ~64 | 🟤 审计中 | - | 翻译完成，待审计 |
+| fs.tex | ~1819 | ~1486 | 🟢 通过 | 0 | 审计完成 |
+| lock2.tex | ~231 | ~64 | 🟢 通过 | 0 | 审计完成 |
 
 **图例**: 🟢 通过 🟡 待审计 🔴 需修改 🟤 审计中
 
@@ -579,15 +579,40 @@ fc-list : family | grep -i "noto\|source han\|wenquanyi"
 
 ---
 
-#### fs.tex - 翻译中
+#### fs.tex - 审计完成 ✅
 
-*等待翻译完成*
+**审计日期**: 2026-04-09
+**状态**: 通过
+
+**关键术语检查**:
+- ✅ inode/dinode - 索引节点/磁盘索引节点
+- ✅ i-number - i号
+- ✅ block/sector - 块/扇区
+- ✅ superblock - 超级块
+- ✅ buffer cache - 缓冲区缓存
+- ✅ transaction - 事务
+- ✅ log - 日志
+- ✅ crash recovery - 崩溃恢复
+- ✅ persistence - 持久性
+- ✅ bread/bwrite/brelse - 保持原文
+
+**技术准确性**: ✅ 无问题
 
 ---
 
-#### lock2.tex - 翻译中
+#### lock2.tex - 审计完成 ✅
 
-*等待翻译完成*
+**审计日期**: 2026-04-09
+**状态**: 通过
+
+**关键术语检查**:
+- ✅ lock/acquire/release - 锁/获取/释放
+- ✅ race condition - 竞态条件
+- ✅ deadlock - 死锁
+- ✅ parallel - 并行
+- ✅ undefined behavior - 未定义行为
+
+**技术准确性**: ✅ 无问题
 
 #### trap.tex - 审计完成 ✅
 

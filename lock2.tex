@@ -5,15 +5,15 @@
 
 \section{锁模式}
 
-缓存项通常对加锁是一个挑战。例如，文件系统的块缓存 \lineref{kernel/bio.c:/^struct/} 存储最多 {\tt NBUF} 个磁盘块的副本。给定磁盘块在缓存中最多只有一个副本是至关重要的；否则，不同的进程可能会对应该是同一块的不同副本做出冲突的更改。每个缓存块存储在 {\tt struct buf} \fileref{kernel/buf.h} 中。{\tt struct buf} 有一个锁字段，有助于确保一次只有一个进程使用给定的磁盘块。然而，这个锁是不够的：如果块根本不在缓存中，两个进程想要同时使用它怎么办？没有 {\tt struct buf}（因为块尚未缓存），因此没有什么可以锁定的。Xv6 通过将额外的锁（{\tt bcache.lock}）与缓存块的身份集相关联来处理这种情况。需要检查块是否已缓存的代码（例如，{\tt bget} \lineref{kernel/bio.c:/^bget/}）或更改缓存块集的代码必须持有 {\tt bcache.lock}；在该代码找到块和它需要的 {\tt struct buf} 之后，它可以释放 {\tt bcache.lock} 并只锁定特定的块。这是一种常见模式：一个锁用于项集，加上每个项一个锁。
+缓存项通常对加锁是一个挑战。例如，文件系统的块缓存 \lineref{kernel/bio.c:/^struct/} 存储最多 {\tt NBUF} 个磁盘块的副本。给定磁盘块在缓存中最多只有一个副本是至关重要的；否则，不同的进程可能会对应该是同一块的不同副本做出冲突的更改。每个缓存块存储在 {\tt struct buf} \fileref{kernel/buf.h} 中。{\tt struct buf} 有一个锁字段，有助于确保一次只有一个进程使用给定的磁盘块。然而，这个锁是不够的：如果块根本不在缓存中，两个进程想要同时使用它怎么办？没有 {\tt struct buf}（因为块尚未缓存），因此没有什么可以锁定的。xv6 通过将额外的锁（{\tt bcache.lock}）与缓存块标识集相关联来处理这种情况。需要检查块是否已被缓存的代码（例如，{\tt bget} \lineref{kernel/bio.c:/^bget/}）或修改缓存块集合的代码必须持有 {\tt bcache.lock}；在该代码找到块和它需要的 {\tt struct buf} 之后，它可以释放 {\tt bcache.lock} 并只锁定特定的块。这是一种常见模式：一个锁用于项集，加上每个项一个锁。
 
-通常，获取锁的同一个函数会释放它。但更精确的看法是，锁在必须表现为原子的序列开始时获取，在该序列结束时释放。如果序列在不同的函数、不同的线程或不同的 CPU 上开始和结束，那么锁的获取和释放也必须这样做。锁的作用是强制其他使用者等待，而不是将某段数据固定到特定的执行者。一个例子是 {\tt yield} 中的 {\tt acquire}\lineref{kernel/proc.c:/^yield/}，它是在调度器线程中释放的，而不是在获取它的进程中。另一个例子是 {\tt ilock} 中的 {\tt acquiresleep}\lineref{kernel/fs.c:/^ilock/}；这段代码在读取磁盘时经常睡眠；它可能在不同的 CPU 上唤醒，这意味着锁可能在不同的 CPU 上获取和释放。
+通常，获取锁的函数也会释放它。但更精确的看法是，锁在必须表现为原子的序列开始时获取，在该序列结束时释放。如果序列在不同的函数、不同的线程或不同的 CPU 上开始和结束，那么锁的获取和释放也必须这样做。锁的作用是强制其他使用者等待，而非将某段数据绑定到特定执行者。一个例子是 {\tt yield} 中的 {\tt acquire}\lineref{kernel/proc.c:/^yield/}，它是在调度器线程中释放的，而不是在获取它的进程中。另一个例子是 {\tt ilock} 中的 {\tt acquiresleep}\lineref{kernel/fs.c:/^ilock/}；这段代码在读取磁盘时经常睡眠；它可能在不同的 CPU 上唤醒，这意味着锁可能在不同的 CPU 上获取和释放。
 
-释放受嵌入在对象中的锁保护的对象是一项微妙的业务，因为拥有锁不足以保证释放是正确的。问题情况发生在其他线程在 {\tt acquire} 中等待使用对象时；释放对象隐式释放嵌入的锁，这将导致等待线程故障。一种解决方案是跟踪对对象的引用数量，以便仅在最后一个引用消失时才释放它。参见 {\tt pipeclose} \lineref{kernel/pipe.c:/^pipeclose/} 作为示例；{\tt pi->readopen} 和 {\tt pi->writeopen} 跟踪管道是否有文件描述符引用它。
+释放受对象内嵌锁保护的对象是一项微妙的操作，因为持有锁不足以保证释放是正确的。问题出现在其他线程在 {\tt acquire} 中等待使用对象时；释放对象隐式释放嵌入的锁，这将导致等待线程故障。一种解决方案是跟踪对对象的引用数量，以便仅在最后一个引用消失时才释放它。参见 {\tt pipeclose} \lineref{kernel/pipe.c:/^pipeclose/} 作为示例；{\tt pi->readopen} 和 {\tt pi->writeopen} 跟踪管道是否有文件描述符引用它。
 
-通常，你会在对相关项目集进行读写序列周围看到锁；锁确保其他线程只看到已完成的更新序列（只要它们也加锁）。如果更新是对单个共享变量的简单写入呢？例如，\texttt{setkilled} 和 \texttt{killed} \lineref{kernel/proc.c:/^setkilled/} 在它们对 \lstinline{p->killed} 的简单使用周围加锁。如果没有锁，一个线程可能在另一个线程读取它的同时写入 \lstinline{p->killed}。这是一个 \indextextx{竞态（race condition）}，C 语言规范说竞态产生 \indextext{未定义行为（undefined behavior）}，这意味着程序可能崩溃或产生不正确的结果。锁防止竞态并避免未定义行为。
+通常，你会在对相关项目集进行读写序列周围看到锁；锁确保其他线程只看到已完成的更新序列（只要它们也加锁）。如果更新只是对单个共享变量的简单写入呢？例如，\texttt{setkilled} 和 \texttt{killed} \lineref{kernel/proc.c:/^setkilled/} 在它们对 \lstinline{p->killed} 的简单使用周围加锁。如果没有锁，一个线程可能在另一个线程读取它的同时写入 \lstinline{p->killed}。这是一个 \indextextx{竞态（race condition）}，C 语言规范说竞态产生 \indextext{未定义行为（undefined behavior）}，这意味着程序可能崩溃或产生不正确的结果。锁防止竞态并避免未定义行为。
 
-竞态可能破坏程序的一个原因是，如果没有锁或等效构造，编译器可能生成以与原始 C 代码截然不同的方式读写内存的机器代码。例如，调用 \texttt{killed} 的线程的机器代码可能将 \lstinline{p->killed} 复制到寄存器，并且只读取那个缓存值；这意味着该线程可能永远看不到对 \lstinline{p->killed} 的任何写入。锁防止这种缓存。
+竞态可能破坏程序的原因之一是，如果没有锁或等效机制，编译器可能生成以与原始 C 代码截然不同的方式读写内存的机器代码。例如，调用 \texttt{killed} 的线程的机器代码可能将 \lstinline{p->killed} 复制到寄存器，并且只读取那个缓存值；这意味着该线程可能永远看不到对 \lstinline{p->killed} 的任何写入。锁防止这种缓存。
 
 % sleep locks.
 % hand-over-hand locking in namei.
@@ -24,7 +24,7 @@
 
 \section{类似锁的模式}
 
-在许多地方，xv6 以类似锁的方式使用引用计数或标志来指示对象已分配且不应被释放或重新使用。进程的 {\tt p->state} 以这种方式工作，{\tt file}、{\tt inode} 和 {\tt buf} 结构中的引用计数也是如此。虽然在每种情况下锁都保护标志或引用计数，但正是后者防止对象被过早释放。
+在许多地方，xv6 以类锁方式使用引用计数或标志来指示对象已分配，不应被释放或重新使用。进程的 {\tt p->state} 以这种方式工作，{\tt file}、{\tt inode} 和 {\tt buf} 结构中的引用计数也是如此。虽然每种情况下锁都保护标志或引用计数，但正是后者防止对象被过早释放。
 
 文件系统使用 {\tt struct inode} 引用计数作为一种可以被多个进程持有的共享锁，以避免如果代码使用普通锁会发生的死锁。例如，{\tt namex} \lineref{kernel/fs.c:/^namex/} 中的循环依次锁定路径名命名的每个目录。然而，{\tt namex} 必须在循环结束时释放每个锁，因为如果它持有多个锁，如果路径名包含点（例如，{\tt a/./b}），它可能会与自己死锁。它也可能与涉及目录和 {\tt ..} 的并发查找死锁。如 Chapter~\ref{CH:FS} 所解释的，解决方案是让循环将其引用计数递增的目录 inode 带到下一次迭代，但不锁定。
 
